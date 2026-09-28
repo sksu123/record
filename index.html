@@ -1,0 +1,2734 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>교육행정 스마트 회의록 AI | 모바일 음성인식 & 자동 회의록</title>
+  <meta name="description" content="모바일 우선 실시간 음성인식 회의록 작성, 다차원 검색(회의명/날짜/작성자/키워드), AI 안건 요약, PDF 저장, Google Drive 보관 시스템" />
+
+  <!-- Pretendard Font (공식 웹폰트) & Google Fonts -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#2563eb',
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+            },
+            slate: {
+              50: '#f8fafc',
+              900: '#0f172a',
+            }
+          },
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons & html2pdf.js & canvas-confetti -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <style>
+    /* Pretendard 폰트 및 모바일 터치 최적화 */
+    body {
+      font-family: 'Pretendard', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    /* Notion & Google Workspace 스타일의 정제된 카드 UI */
+    .clean-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+    }
+
+    /* 실시간 음성 녹음 파동 시각화 애니메이션 */
+    @keyframes audio-wave {
+      0%, 100% { height: 6px; }
+      50% { height: 26px; }
+    }
+    .wave-bar {
+      display: inline-block;
+      width: 4px;
+      background-color: #2563eb;
+      border-radius: 2px;
+      animation: audio-wave 1.2s ease-in-out infinite;
+    }
+    .wave-bar:nth-child(1) { animation-delay: 0.0s; }
+    .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+    .wave-bar:nth-child(3) { animation-delay: 0.4s; }
+    .wave-bar:nth-child(4) { animation-delay: 0.1s; }
+    .wave-bar:nth-child(5) { animation-delay: 0.3s; }
+
+    /* 검색 키워드 하이라이팅 스타일 */
+    mark.search-highlight {
+      background-color: #fef08a;
+      color: #854d0e;
+      padding: 0 2px;
+      border-radius: 2px;
+      font-weight: 600;
+    }
+
+    /* 터치 스크롤바 */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    /* PDF 및 인쇄 전용 스타일 */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printMinutesDoc, #printMinutesDoc * {
+        visibility: visible;
+      }
+      #printMinutesDoc {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 20mm 15mm;
+        background: #ffffff !important;
+        color: #000000 !important;
+        font-size: 10.5pt;
+        line-height: 1.6;
+        box-shadow: none !important;
+        border: none !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+
+    /* 본 회의 회의록 2단 다단 서식 (PDF 양식 일치) */
+    .minutes-two-col {
+      column-count: 2;
+      column-gap: 28px;
+      column-rule: 1px solid #e2e8f0;
+      text-align: justify;
+      word-break: keep-all;
+    }
+    @media (max-width: 640px) {
+      .minutes-two-col {
+        column-count: 1;
+        column-rule: none;
+      }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col antialiased selection:bg-blue-100 selection:text-blue-900 pb-28 sm:pb-12">
+
+  <!-- ================= TOP MOBILE HEADER ================= -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 shadow-xs">
+    <div class="max-w-2xl mx-auto flex items-center justify-between">
+      <!-- 브랜드 및 앱 타이틀 (홈 바로가기 기능 연동) -->
+      <div class="flex items-center gap-2.5 cursor-pointer group" onclick="switchView('record')" title="회의록 초기 화면(음성 기록) 바로가기">
+        <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0 group-hover:bg-blue-700 transition">
+          <i data-lucide="mic" class="w-5 h-5"></i>
+        </div>
+        <div class="truncate">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[11px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">교육행정</span>
+            <span class="text-[11px] text-slate-500 font-medium">스마트 회의록</span>
+          </div>
+          <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight truncate group-hover:text-blue-600 transition">
+            모바일 음성인식 & 자동 회의록
+          </h1>
+        </div>
+      </div>
+
+      <!-- 상단 액션: 초기화면 바로가기 홈 단추, 보관함/검색 버튼 & 설정 -->
+      <div class="flex items-center gap-1.5">
+        <!-- 회의록 초기 화면 바로가기 단추 -->
+        <button onclick="switchView('record')" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition flex items-center gap-1 shadow-xs" title="회의록 초기 화면(음성 기록)으로 바로가기">
+          <i data-lucide="home" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">초기 화면</span>
+        </button>
+
+        <button onclick="switchView('search')" class="p-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition flex items-center gap-1" title="회의록 검색 및 보관함">
+          <i data-lucide="search" class="w-4 h-4"></i>
+          <span class="text-xs font-bold hidden xs:inline">검색</span>
+        </button>
+        <button onclick="toggleModal('quickMenuModal')" class="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition" aria-label="설정">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MOBILE NAVIGATION TABS (5 TABS) ================= -->
+  <nav class="bg-white border-b border-slate-200 px-2 sm:px-4 sticky top-[57px] z-20 overflow-x-auto">
+    <div class="max-w-2xl mx-auto flex items-center justify-between text-xs font-semibold min-w-[460px]">
+      <button onclick="switchView('record')" id="navTabRecord" class="flex-1 py-3 text-center border-b-2 border-blue-600 text-blue-600 flex items-center justify-center gap-1 transition">
+        <i data-lucide="mic" class="w-4 h-4"></i>
+        <span>음성 기록</span>
+      </button>
+      <button onclick="switchView('agendas')" id="navTabAgendas" class="flex-1 py-3 text-center border-b-2 border-transparent text-slate-500 hover:text-slate-900 flex items-center justify-center gap-1 transition">
+        <i data-lucide="list-checks" class="w-4 h-4"></i>
+        <span>안건관리</span>
+      </button>
+      <button onclick="switchView('meeting')" id="navTabMeeting" class="flex-1 py-3 text-center border-b-2 border-transparent text-slate-500 hover:text-slate-900 flex items-center justify-center gap-1 transition">
+        <i data-lucide="calendar" class="w-4 h-4"></i>
+        <span>회의관리</span>
+      </button>
+      <button onclick="switchView('attendees')" id="navTabAttendees" class="flex-1 py-3 text-center border-b-2 border-transparent text-slate-500 hover:text-slate-900 flex items-center justify-center gap-1 transition">
+        <i data-lucide="users" class="w-4 h-4"></i>
+        <span>참석자관리 (<span id="tabAttendeeCount">4</span>)</span>
+      </button>
+      <button onclick="switchView('result')" id="navTabResult" class="flex-1 py-3 text-center border-b-2 border-transparent text-slate-500 hover:text-slate-900 flex items-center justify-center gap-1 transition">
+        <i data-lucide="file-check" class="w-4 h-4"></i>
+        <span>생성 회의록</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ================= MAIN CONTAINER ================= -->
+  <main class="flex-1 max-w-2xl w-full mx-auto p-4 space-y-4">
+
+    <!-- ================= VIEW 1: RECORD & SPEECH-TO-TEXT (MAIN FLOW) ================= -->
+    <div id="viewRecord" class="space-y-4">
+
+      <!-- Active Meeting Badge Card -->
+      <div class="clean-card p-3.5 flex items-center justify-between">
+        <div class="truncate">
+          <div class="flex items-center gap-1.5">
+            <span id="badgeCategory" class="text-[10px] font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded">학교운영위원회</span>
+            <span class="text-[10px] text-slate-400 font-mono" id="badgeLastSaved">최근 저장됨</span>
+          </div>
+          <h2 id="badgeTitle" class="text-sm font-bold text-slate-900 mt-1 truncate">2026학년도 제1회 학교운영위원회 정기회</h2>
+          <p id="badgeTimeLocation" class="text-xs text-slate-500 mt-0.5">2026.03.24 15:30 | 본관 2층 운영위원회실</p>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0 ml-2">
+          <button onclick="openNewMeetingModal()" class="text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition" title="새 회의 시작">
+            <i data-lucide="plus" class="w-3.5 h-3.5 inline"></i> 새 회의
+          </button>
+          <button onclick="switchView('meeting')" class="text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition">
+            수정
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Voice Status Banner (Displayed during Speech Recording) -->
+      <div id="liveVoiceBanner" class="hidden clean-card p-3 bg-blue-50/90 border-blue-200 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1 h-6 px-1">
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+              <span>음성 실시간 인식 중...</span>
+              <span class="text-[10px] bg-red-500 text-white font-mono px-1.5 py-0.2 rounded animate-pulse">REC</span>
+            </div>
+            <p class="text-[11px] text-blue-700 font-mono" id="liveRecordDuration">00:00</p>
+          </div>
+        </div>
+        <div class="text-right">
+          <span class="text-[11px] text-blue-600 font-medium">한국어 (ko-KR)</span>
+          <p class="text-[10px] text-blue-500">연속 인식 모드</p>
+        </div>
+      </div>
+
+      <!-- Quick Fast Action Banner for Mobile -->
+      <div class="grid grid-cols-3 gap-2 text-center text-xs">
+        <button onclick="toggleSpeechRecording()" class="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 font-bold hover:bg-blue-100 transition flex flex-col items-center gap-1">
+          <i data-lucide="mic" class="w-4 h-4 text-blue-600"></i>
+          <span>1. 음성 녹음</span>
+        </button>
+        <button onclick="processAndGenerateMinutes()" class="p-2.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition flex flex-col items-center gap-1 shadow-xs">
+          <i data-lucide="sparkles" class="w-4 h-4 text-blue-400"></i>
+          <span>2. 회의록 생성</span>
+        </button>
+        <button onclick="switchView('result'); setTimeout(exportToPdf, 200);" class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold hover:bg-emerald-100 transition flex flex-col items-center gap-1">
+          <i data-lucide="download" class="w-4 h-4 text-emerald-600"></i>
+          <span>3. PDF 저장</span>
+        </button>
+      </div>
+
+      <!-- Agenda Selection Tabs for Voice Mapping -->
+      <div class="clean-card p-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold text-slate-700 flex items-center gap-1">
+            <i data-lucide="list-checks" class="w-3.5 h-3.5 text-blue-600"></i>
+            현재 심의/기록 안건 (<span id="currentAgendaIndicator" class="text-blue-600 font-bold">제1호</span>)
+          </label>
+          <div class="flex items-center gap-2">
+            <button onclick="openAddAgendaModal()" class="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-0.5">
+              <i data-lucide="plus" class="w-3 h-3"></i> 안건 추가
+            </button>
+          </div>
+        </div>
+        
+        <div id="agendaPillsContainer" class="flex gap-1.5 overflow-x-auto pb-1 text-xs">
+          <!-- Dynamic Agenda Pills -->
+        </div>
+        
+        <!-- Active Agenda Info Bar -->
+        <div class="p-2 bg-blue-50/70 border border-blue-100 rounded-lg flex items-center justify-between text-xs text-blue-900">
+          <div class="flex items-center gap-1.5 truncate">
+            <span class="w-2 h-2 rounded-full bg-blue-600 shrink-0"></span>
+            <span class="font-bold shrink-0">선택된 안건:</span>
+            <span id="activeAgendaTitleDisplay" class="font-medium truncate">제1호: 2026학년도 1학기 방과후학교 운영계획안</span>
+          </div>
+          <span class="text-[11px] text-blue-600 shrink-0 ml-2 font-mono" id="activeAgendaCharBadge">0자 기록됨</span>
+        </div>
+      </div>
+
+      <!-- Real-time Speech Transcript Area (Large Textarea with Auto Scroll) -->
+      <div class="clean-card p-4 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1">
+              <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-600"></i>
+              <span id="transcriptHeaderLabel">선택 안건 실시간 발언 내용</span>
+            </h3>
+            <span id="textCharCount" class="text-[10px] text-slate-400 font-mono">(0자)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="loadSampleText()" class="text-[11px] text-slate-500 hover:text-blue-600 underline">
+              샘플 불러오기
+            </button>
+            <button onclick="clearTranscript()" class="text-[11px] text-slate-400 hover:text-red-600">
+              비우기
+            </button>
+          </div>
+        </div>
+
+        <!-- Main Real-time Text Area -->
+        <div class="relative">
+          <textarea id="liveTranscriptArea" rows="11" placeholder="선택된 안건에 대한 발언 내용입니다.
+
+하단의 [음성 기록 시작] 버튼을 누르면 이 안건에 실시간으로 음성이 기록 및 자동 저장됩니다.
+다른 안건을 클릭하면 해당 안건의 발언 내용으로 즉시 전환됩니다." class="w-full text-sm leading-relaxed p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white focus:outline-none transition resize-y font-sans text-slate-900"></textarea>
+
+          <!-- Live Interim Speech Floating Text Badge -->
+          <div id="interimSpeechBox" class="hidden absolute bottom-3 left-3 right-3 p-2.5 bg-blue-600/95 backdrop-blur-md text-white text-xs rounded-lg shadow-lg flex items-center gap-2">
+            <i data-lucide="mic" class="w-4 h-4 animate-pulse shrink-0"></i>
+            <span id="interimSpeechText" class="truncate font-medium">음성을 듣고 있습니다...</span>
+          </div>
+        </div>
+
+        <!-- Privacy Filter & Auto-save Status Mini Bar -->
+        <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+            <span class="font-medium">개인정보 자동 비식별화 필터</span>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="chkDeidentify" checked class="sr-only peer">
+            <div class="w-8 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+          </label>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= VIEW 2: AGENDAS MANAGEMENT (안건관리: 추가, 수정, 삭제, 순서) ================= -->
+    <div id="viewAgendas" class="hidden space-y-4">
+      
+      <!-- Agenda Quick Add Card -->
+      <div class="clean-card p-4 space-y-3">
+        <h3 class="text-sm font-bold text-slate-900 flex items-center justify-between border-b border-slate-100 pb-2">
+          <span class="flex items-center gap-1.5">
+            <i data-lucide="list-plus" class="w-4 h-4 text-blue-600"></i>
+            안건 신규 추가
+          </span>
+          <span class="text-[11px] text-slate-400 font-normal">총 <span id="agendaCountDisplay" class="font-bold text-blue-600 font-mono">3</span>건 등록됨</span>
+        </h3>
+        
+        <div class="space-y-2">
+          <label class="block text-xs font-bold text-slate-700">안건명</label>
+          <div class="flex gap-2">
+            <input type="text" id="inputDirectAgendaTitle" placeholder="예: 2026학년도 1학기 방과후학교 운영계획안" class="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium" onkeydown="if(event.key==='Enter') addAgendaDirectly()" />
+            <button onclick="addAgendaDirectly()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shrink-0 transition flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>추가</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agenda List & Management Card -->
+      <div class="clean-card p-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+            <i data-lucide="list-checks" class="w-4 h-4 text-blue-600"></i>
+            상정 안건 목록 및 편집
+          </h3>
+          <span class="text-[11px] text-slate-500">안건 클릭 시 발언 기록으로 연동</span>
+        </div>
+
+        <!-- Dynamic Agendas List with Edit, Delete, Transcript preview -->
+        <div id="agendasManagementList" class="space-y-2.5">
+          <!-- Injected dynamically via renderAgendasManagement() -->
+        </div>
+
+        <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+          <button onclick="switchView('record')" class="px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1 transition">
+            <i data-lucide="mic" class="w-3.5 h-3.5"></i>
+            <span>음성 기록 화면으로 이동</span>
+          </button>
+          <button onclick="switchView('meeting')" class="px-3 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 transition">
+            <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+            <span>회의 정보 관리</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= VIEW 3: MEETING MANAGEMENT (회의관리: 새 회의, 기본정보 수정, 회의록 검색/보관) ================= -->
+    <div id="viewMeeting" class="hidden space-y-4">
+      
+      <!-- 1. New Meeting Quick Start & Presets -->
+      <div class="clean-card p-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+            <i data-lucide="plus-circle" class="w-4 h-4 text-blue-600"></i>
+            새 회의 시작 (위원회별 프리셋)
+          </h3>
+          <button onclick="resetToBlankMeeting()" class="text-xs text-blue-600 hover:underline">
+            빈 회의 생성
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-500">
+          회의 유형을 선택하시면 해당 위원회의 표준 안건 및 기본 참석자가 자동 구성됩니다.
+        </p>
+
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <button onclick="startMeetingFromPreset('학운위')" class="p-3 bg-blue-50/80 hover:bg-blue-100 text-blue-900 font-bold rounded-xl text-left border border-blue-200 transition">
+            <div class="text-blue-600 mb-0.5 font-bold flex items-center gap-1">
+              <i data-lucide="building" class="w-3.5 h-3.5"></i> 학교운영위원회
+            </div>
+            <p class="text-[10px] text-blue-700 font-normal">방과후, 추경, 수학여행</p>
+          </button>
+          <button onclick="startMeetingFromPreset('예결산')" class="p-3 bg-emerald-50/80 hover:bg-emerald-100 text-emerald-900 font-bold rounded-xl text-left border border-emerald-200 transition">
+            <div class="text-emerald-600 mb-0.5 font-bold flex items-center gap-1">
+              <i data-lucide="wallet" class="w-3.5 h-3.5"></i> 예산결산소위
+            </div>
+            <p class="text-[10px] text-emerald-700 font-normal">본예산, 추경예산, 발전기금</p>
+          </button>
+          <button onclick="startMeetingFromPreset('교직원')" class="p-3 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 font-bold rounded-xl text-left border border-indigo-200 transition">
+            <div class="text-indigo-600 mb-0.5 font-bold flex items-center gap-1">
+              <i data-lucide="users" class="w-3.5 h-3.5"></i> 교직원 전체회의
+            </div>
+            <p class="text-[10px] text-indigo-700 font-normal">학사일정, 늘봄학교, 교무</p>
+          </button>
+          <button onclick="startMeetingFromPreset('학폭')" class="p-3 bg-rose-50/80 hover:bg-rose-100 text-rose-900 font-bold rounded-xl text-left border border-rose-200 transition">
+            <div class="text-rose-600 mb-0.5 font-bold flex items-center gap-1">
+              <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i> 학교폭력전담기구
+            </div>
+            <p class="text-[10px] text-rose-700 font-normal">사안 자체해결, 심의회</p>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. Current Active Meeting Info Edit Form (회의명, 일시, 장소 수정) -->
+      <div class="clean-card p-4 sm:p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+            <i data-lucide="edit-3" class="w-4 h-4 text-blue-600"></i>
+            현재 회의 기본 정보 수정
+          </h3>
+          <span class="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold">실시간 동기화</span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">회의명 *</label>
+            <input type="text" id="inputMeetingTitle" value="2026학년도 제1회 학교운영위원회 정기회" class="w-full text-xs sm:text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">회의 유형 *</label>
+              <select id="inputMeetingType" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 font-medium">
+                <option value="학교운영위원회">학교운영위원회</option>
+                <option value="예산결산소위원회">예산결산소위원회</option>
+                <option value="교직원 전체회의">교직원 전체회의</option>
+                <option value="학교폭력전담기구">학교폭력전담기구</option>
+                <option value="방과후학교소위원회">방과후학교소위원회</option>
+                <option value="학교급식소위원회">학교급식소위원회</option>
+                <option value="행정실 업무협의회">행정실 업무협의회</option>
+                <option value="기타 협의회">기타 협의회</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">주관 부서 *</label>
+              <input type="text" id="inputDept" value="행정실 / 교무부" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 font-medium" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">회의 일시 *</label>
+              <input type="datetime-local" id="inputMeetingDateTime" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 font-medium" />
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">회의 장소 *</label>
+              <input type="text" id="inputLocation" value="본관 2층 운영위원회실" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 font-medium" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">작성자 (간사/주무관) *</label>
+              <input type="text" id="inputWriter" value="행정실 간사 박행정" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 font-medium" />
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">학교/기관명 *</label>
+              <input type="text" id="inputSchoolName" value="빛가람초등학교" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 font-medium" />
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-2 flex gap-2">
+          <button onclick="saveMeetingInfo(); switchView('record');" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-xs flex items-center justify-center gap-1">
+            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+            <span>정보 저장 후 음성 기록으로 이동</span>
+          </button>
+          <button onclick="saveCurrentMeetingToArchive()" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1">
+            <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+            <span>보관함 저장</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. Meeting Archive & Search (회의록 검색 / 보관) -->
+      <div class="clean-card p-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+            <i data-lucide="archive" class="w-4 h-4 text-blue-600"></i>
+            회의록 보관함 & 다차원 검색
+          </h3>
+          <button onclick="resetSearchFilters()" class="text-xs text-slate-400 hover:text-slate-600">
+            필터 초기화
+          </button>
+        </div>
+
+        <!-- 4 Search Input Fields: 회의명, 날짜, 작성자, 키워드 -->
+        <div class="space-y-2 text-xs">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">회의명 검색</label>
+            <div class="relative">
+              <input type="text" id="searchFilterTitle" placeholder="예: 운영위원회, 예산, 추경, 교직원" class="w-full p-2 pl-7 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" oninput="performSearch()" />
+              <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2.5"></i>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">회의 일자</label>
+              <input type="date" id="searchFilterDate" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs" onchange="performSearch()" />
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">작성자 (간사)</label>
+              <input type="text" id="searchFilterWriter" placeholder="예: 박행정, 주무관" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs" oninput="performSearch()" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">발언 내용 및 키워드</label>
+            <div class="relative">
+              <input type="text" id="searchFilterKeyword" placeholder="예: 방과후, 현장체험학습, 5,000만원, 가결, 안전펜스" class="w-full p-2 pl-7 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" oninput="performSearch()" />
+              <i data-lucide="key" class="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2.5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Filter Tags -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pt-1 text-[11px]">
+          <span class="text-slate-400 font-medium shrink-0">빠른 필터:</span>
+          <button onclick="setQuickSearchTag('운영위원회')" class="px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-600 shrink-0">#운영위원회</button>
+          <button onclick="setQuickSearchTag('예산')" class="px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-600 shrink-0">#예산/추경</button>
+          <button onclick="setQuickSearchTag('방과후')" class="px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-600 shrink-0">#방과후</button>
+          <button onclick="setQuickSearchTag('급식')" class="px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-600 shrink-0">#급식</button>
+        </div>
+
+        <!-- Search Results List -->
+        <div class="space-y-2 pt-2 border-t border-slate-100">
+          <div class="flex items-center justify-between text-xs px-1">
+            <span class="font-bold text-slate-700">
+              보관 회의록: <span id="searchResultCount" class="text-blue-600 font-mono font-bold">0</span>건
+            </span>
+          </div>
+
+          <div id="searchResultsList" class="space-y-2.5">
+            <!-- Injected via JavaScript -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= VIEW 4: ATTENDEES MANAGEMENT (참석자관리: 각종 위원회 위원 저장/수정/기본명단 계속 사용) ================= -->
+    <div id="viewAttendees" class="hidden space-y-4">
+      
+      <!-- Attendees Stats Summary Card -->
+      <div class="clean-card p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-[11px] font-bold text-slate-400 uppercase">출석 현황</span>
+            <div class="text-xl font-bold text-slate-900 mt-0.5">
+              <span id="statAttendedCount" class="text-blue-600">4</span> / <span id="statTotalCount">5</span>명 참석
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="text-[11px] font-bold text-slate-400">참석률</span>
+            <div class="text-xl font-bold text-emerald-600" id="statRate">80%</div>
+          </div>
+        </div>
+        <div class="w-full bg-slate-100 h-2 rounded-full mt-3 overflow-hidden">
+          <div id="statProgressBar" class="bg-blue-600 h-full transition-all duration-300" style="width: 80%"></div>
+        </div>
+      </div>
+
+      <!-- Committee Default List & Preset Manager (각종 위원회 위원 저장, 수정, 기본 명단 계속 사용 기능) -->
+      <div class="clean-card p-4 space-y-3 bg-gradient-to-r from-blue-50/50 to-slate-50">
+        <div class="flex items-center justify-between border-b border-slate-200/70 pb-2">
+          <h4 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+            <i data-lucide="bookmark-check" class="w-4 h-4 text-blue-600"></i>
+            위원회별 기본 명단 불러오기 & 영구 저장
+          </h4>
+          <span class="text-[10px] text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded font-bold">기본명단 계속 사용</span>
+        </div>
+
+        <p class="text-[11px] text-slate-600 leading-relaxed">
+          자주 개최되는 위원회의 명단을 기본 명단으로 저장해두면, 새 회의마다 다시 입력할 필요 없이 원클릭으로 계속 재사용할 수 있습니다.
+        </p>
+
+        <!-- Committee preset buttons -->
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <button onclick="loadCommitteePreset('운영위원회')" class="p-2.5 bg-white hover:bg-blue-50 border border-slate-200 rounded-lg text-left font-bold text-slate-800 transition shadow-xs flex items-center justify-between">
+            <span>🏫 학교운영위원회</span>
+            <span class="text-[10px] text-blue-600 font-normal">5명 명단</span>
+          </button>
+          <button onclick="loadCommitteePreset('예산결산')" class="p-2.5 bg-white hover:bg-blue-50 border border-slate-200 rounded-lg text-left font-bold text-slate-800 transition shadow-xs flex items-center justify-between">
+            <span>💰 예산결산소위</span>
+            <span class="text-[10px] text-blue-600 font-normal">3명 명단</span>
+          </button>
+          <button onclick="loadCommitteePreset('교직원')" class="p-2.5 bg-white hover:bg-blue-50 border border-slate-200 rounded-lg text-left font-bold text-slate-800 transition shadow-xs flex items-center justify-between">
+            <span>👨‍🏫 교직원협의회</span>
+            <span class="text-[10px] text-blue-600 font-normal">4명 명단</span>
+          </button>
+          <button onclick="loadCommitteePreset('학교폭력')" class="p-2.5 bg-white hover:bg-blue-50 border border-slate-200 rounded-lg text-left font-bold text-slate-800 transition shadow-xs flex items-center justify-between">
+            <span>🛡️ 학폭전담기구</span>
+            <span class="text-[10px] text-blue-600 font-normal">4명 명단</span>
+          </button>
+        </div>
+
+        <!-- Default Member Save/Restore Action -->
+        <div class="pt-2 border-t border-slate-200/70 flex items-center justify-between gap-2">
+          <button onclick="saveCurrentAttendeesAsDefault()" class="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs">
+            <i data-lucide="save" class="w-3.5 h-3.5 text-blue-400"></i>
+            <span>현재 명단을 기본 명단으로 저장</span>
+          </button>
+          <button onclick="loadDefaultAttendees()" class="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span>저장된 기본 명단 불러오기</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Add Attendee Input Form -->
+      <div class="clean-card p-3.5 space-y-2">
+        <label class="text-xs font-bold text-slate-800 flex items-center gap-1">
+          <i data-lucide="user-plus" class="w-3.5 h-3.5 text-blue-600"></i>
+          참석 위원 직접 추가
+        </label>
+        <div class="flex gap-2">
+          <input type="text" id="inputNewAttendeeRole" placeholder="직위 (예: 위원장, 교원위원, 학부모위원)" class="w-1/3 text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <input type="text" id="inputNewAttendeeName" placeholder="성명 (예: 홍길동)" class="w-1/2 text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" onkeydown="if(event.key==='Enter') addAttendee()" />
+          <button onclick="addAttendee()" class="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shrink-0 hover:bg-blue-700 transition">
+            추가
+          </button>
+        </div>
+      </div>
+
+      <!-- Attendees List (출석 체크 및 직위/성명 수정 & 삭제) -->
+      <div class="clean-card p-3.5 space-y-2">
+        <h4 class="text-xs font-bold text-slate-700 flex items-center justify-between border-b border-slate-100 pb-2">
+          <span>참석 위원 명단 및 출석 체크</span>
+          <div class="flex items-center gap-2">
+            <button onclick="checkAllAttendees(true)" class="text-[11px] text-blue-600 font-normal hover:underline">
+              전체 출석
+            </button>
+            <span class="text-slate-300">|</span>
+            <button onclick="checkAllAttendees(false)" class="text-[11px] text-slate-500 font-normal hover:underline">
+              전체 해제
+            </button>
+          </div>
+        </h4>
+
+        <div id="attendeesListContainer" class="space-y-1.5 max-h-96 overflow-y-auto">
+          <!-- Injected dynamically -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= VIEW 4: AI GENERATED MINUTES & EXPORT ================= -->
+    <div id="viewResult" class="hidden space-y-4">
+
+      <!-- Action Export Bar -->
+      <div class="clean-card p-3.5 flex items-center justify-between gap-2 flex-wrap bg-slate-900 text-white">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center text-white font-bold text-xs">
+            AI
+          </div>
+          <div>
+            <h3 class="text-xs font-bold">공식 회의록 자동 생성 완료</h3>
+            <p class="text-[10px] text-slate-300">학교 표준 서식 & K-에듀파인 호환</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <!-- PDF Export -->
+          <button onclick="exportToPdf()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-sm transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>PDF 저장</span>
+          </button>
+          <!-- Google Drive Export -->
+          <button onclick="exportToGoogleDrive()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-sm transition">
+            <i data-lucide="hard-drive" class="w-3.5 h-3.5"></i>
+            <span>드라이브 보관</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- AI Structured Sections (Summary Cards) -->
+      <div class="space-y-3">
+        <!-- 1. 논의내용 -->
+        <div class="clean-card p-4 space-y-2">
+          <div class="flex items-center gap-2 text-xs font-bold text-slate-800 border-b border-slate-100 pb-2">
+            <span class="w-5 h-5 rounded bg-blue-100 text-blue-700 flex items-center justify-center text-[11px]">1</span>
+            <h4>주요 논의 내용</h4>
+          </div>
+          <div id="aiSummaryDiscussions" class="text-xs sm:text-sm text-slate-700 leading-relaxed space-y-1.5" contenteditable="true">
+            <!-- Dynamic Content -->
+          </div>
+        </div>
+
+        <!-- 2. 결정사항 -->
+        <div class="clean-card p-4 space-y-2 border-l-4 border-l-blue-600">
+          <div class="flex items-center gap-2 text-xs font-bold text-blue-900 border-b border-slate-100 pb-2">
+            <span class="w-5 h-5 rounded bg-blue-600 text-white flex items-center justify-center text-[11px]">2</span>
+            <h4>의결 및 결정 사항</h4>
+          </div>
+          <div id="aiSummaryDecisions" class="text-xs sm:text-sm text-slate-800 leading-relaxed space-y-1.5" contenteditable="true">
+            <!-- Dynamic Content -->
+          </div>
+        </div>
+
+        <!-- 3. 후속조치 -->
+        <div class="clean-card p-4 space-y-2 border-l-4 border-l-emerald-600">
+          <div class="flex items-center gap-2 text-xs font-bold text-emerald-900 border-b border-slate-100 pb-2">
+            <span class="w-5 h-5 rounded bg-emerald-600 text-white flex items-center justify-center text-[11px]">3</span>
+            <h4>후속 조치 계획</h4>
+          </div>
+          <div id="aiSummaryFollowups" class="text-xs sm:text-sm text-slate-800 leading-relaxed space-y-1.5" contenteditable="true">
+            <!-- Dynamic Content -->
+          </div>
+        </div>
+      </div>
+
+      <!-- School Official Minutes Printable Sheet (운영위원회 본 회의 회의록 표준 양식 - 첨부 PDF 서식 일치) -->
+      <div class="clean-card p-6 sm:p-10 bg-white space-y-6 text-slate-900 border border-slate-300 shadow-sm" id="printMinutesDoc">
+        
+        <!-- Top Header & Main Title (결재란 없음, 첨부 PDF 양식 일치) -->
+        <div class="text-center space-y-3 pt-2">
+          <div class="text-base sm:text-lg font-bold tracking-wider" id="docMeetingSubHeader">
+            제 <span id="docMeetingSeq">109</span>회 <span id="docSchoolHeader">담양남초등학교</span>운영위원회(<span id="docMeetingKind">임시회</span>)
+          </div>
+          
+          <h2 class="text-2xl sm:text-3xl font-black tracking-widest py-2 border-y-2 border-slate-900 my-2">
+            본 회 의 회 의 록
+          </h2>
+          
+          <div class="text-base sm:text-lg font-bold tracking-wide text-right pr-2" id="docCommitteeName">
+            담양남초등학교운영위원회
+          </div>
+        </div>
+
+        <!-- Date & Order of Business (의사일정 & 심의안건) -->
+        <div class="border-t-2 border-slate-900 pt-3 space-y-3">
+          <div class="text-sm sm:text-base font-bold" id="docFullDateLine">
+            2026년 03월 24일(화) 15:30
+          </div>
+          
+          <!-- 의사일정 -->
+          <div class="space-y-1 text-xs sm:text-sm">
+            <h4 class="font-bold text-slate-900 text-sm">의사일정</h4>
+            <ol class="list-decimal list-inside pl-1 space-y-0.5 text-slate-800">
+              <li>개회식</li>
+              <li>개의선포</li>
+              <li>보고사항</li>
+              <li>회기결정</li>
+              <li>안건심의</li>
+              <li>기타협의사항</li>
+              <li>폐회</li>
+            </ol>
+          </div>
+
+          <!-- 심의안건 목록 -->
+          <div class="space-y-1 text-xs sm:text-sm pt-1 border-t border-slate-200">
+            <h4 class="font-bold text-slate-900 text-sm">심의안건</h4>
+            <div id="docAgendasOrderedList" class="pl-1 space-y-0.5 text-slate-800 font-medium">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 본 회의 발언록 본문 (2단 다단 서식, 첨부 PDF 양식 일치) -->
+        <div class="border-t-2 border-slate-900 pt-4">
+          <div id="docMinutesTwoColumnBody" class="minutes-two-col text-xs sm:text-[13px] leading-relaxed text-slate-900 space-y-2">
+            <!-- Dynamically generated realistic school committee minutes dialogues -->
+          </div>
+        </div>
+
+        <!-- Bottom Attendee Summary (참석교직원, 참석위원, 간사, 작성자) -->
+        <div class="border-t-2 border-slate-900 pt-4 text-xs space-y-1.5 font-sans">
+          <div id="docFooterAttendees">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Page Footer Number -->
+        <div class="text-center pt-3 text-xs text-slate-500 font-mono">
+          - 1 -
+        </div>
+
+      </div>
+
+      <!-- Edufine Copy & Quick Home Buttons -->
+      <div class="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <button onclick="copyForEdufine()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition">
+          <i data-lucide="copy" class="w-4 h-4 text-blue-400"></i>
+          <span>K-에듀파인 기안문 복사</span>
+        </button>
+
+        <button onclick="switchView('record')" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition">
+          <i data-lucide="home" class="w-4 h-4 text-white"></i>
+          <span>초기 화면(음성 기록)으로 바로가기</span>
+        </button>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ================= FIXED BOTTOM ONE-HAND ACTION BAR (MOBILE FIRST) ================= -->
+  <aside class="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 shadow-lg">
+    <div class="max-w-2xl mx-auto flex items-center gap-2.5">
+      
+      <!-- MAIN BIG ONE-HAND VOICE RECORD TOGGLE BUTTON -->
+      <button id="btnToggleSpeech" onclick="toggleSpeechRecording()" class="flex-1 h-14 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-2xl font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-md shadow-blue-600/30 transition">
+        <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+          <i data-lucide="mic" id="mainMicIcon" class="w-5 h-5"></i>
+        </div>
+        <span id="mainMicLabel">음성 기록 시작</span>
+      </button>
+
+      <!-- AUTO GENERATE MINUTES BUTTON -->
+      <button id="btnGenerateMinutes" onclick="processAndGenerateMinutes()" class="h-14 px-4 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white rounded-2xl font-bold text-xs sm:text-sm flex flex-col items-center justify-center shrink-0 shadow-sm transition">
+        <i data-lucide="sparkles" class="w-4 h-4 text-blue-400 mb-0.5"></i>
+        <span>회의록 생성</span>
+      </button>
+
+    </div>
+  </aside>
+
+  <!-- ================= MODALS ================= -->
+
+  <!-- 1. Quick Menu & Cloud/API Settings Modal -->
+  <div id="quickMenuModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-slate-200 max-h-[85vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+          <i data-lucide="settings" class="w-4 h-4 text-blue-600"></i>
+          설정 및 클라우드 연동
+        </h3>
+        <button onclick="toggleModal('quickMenuModal')" class="p-1 rounded text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Gemini API Key Config -->
+      <div class="space-y-2 text-xs">
+        <label class="font-bold text-slate-700 flex items-center justify-between">
+          <span>Gemini AI API Key (선택)</span>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-600 underline text-[11px]">무료 키 발급</a>
+        </label>
+        <input type="password" id="inputApiKey" placeholder="AIzaSy..." class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+        <p class="text-[11px] text-slate-400">
+          * 키가 없어도 내장된 교육행정 고도화 엔진으로 음성인식 및 구조화가 완벽 작동합니다.
+        </p>
+      </div>
+
+      <!-- Google Drive Archive Status -->
+      <div class="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs space-y-1">
+        <div class="flex items-center justify-between text-emerald-900 font-bold">
+          <span class="flex items-center gap-1">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-emerald-600"></i>
+            Google Drive 자동 백업
+          </span>
+          <span class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded">활성화됨</span>
+        </div>
+        <p class="text-emerald-700 text-[11px]">
+          생성된 회의록은 브라우저 로컬 저장소 및 Google Drive 클라우드 보관함으로 즉시 내보낼 수 있습니다.
+        </p>
+      </div>
+
+      <!-- Data Management -->
+      <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+        <button onclick="resetAllMeetingData()" class="text-xs text-rose-600 font-semibold hover:underline">
+          회의 데이터 전체 초기화
+        </button>
+        <button onclick="saveSettings(); toggleModal('quickMenuModal')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700">
+          저장 완료
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Add Agenda Modal -->
+  <div id="addAgendaModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-slate-200">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-blue-600"></i>
+          새 회의 안건 추가
+        </h3>
+        <button onclick="toggleModal('addAgendaModal')" class="p-1 rounded text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">안건명</label>
+          <input type="text" id="inputNewAgendaTitle" placeholder="예: 2026학년도 1학기 현장체험학습 계획안" class="w-full text-xs sm:text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" onkeydown="if(event.key==='Enter') saveNewAgenda()" />
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        <button onclick="toggleModal('addAgendaModal')" class="px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">
+          취소
+        </button>
+        <button onclick="saveNewAgenda()" class="px-4 py-2 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          안건 등록
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. New Meeting Quick Setup Modal -->
+  <div id="newMeetingModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-slate-200">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-blue-600"></i>
+          새 회의 시작 프리셋 선택
+        </h3>
+        <button onclick="toggleModal('newMeetingModal')" class="p-1 rounded text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-500">
+        회의 유형을 선택하시면 표준 안건 및 기본 설정이 자동으로 준비됩니다.
+      </p>
+
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <button onclick="startMeetingFromPreset('학운위')" class="p-3 bg-blue-50 hover:bg-blue-100 text-blue-900 font-bold rounded-xl text-left border border-blue-200 transition">
+          <div class="text-blue-600 mb-1 font-bold">🏫 학교운영위원회</div>
+          <p class="text-[11px] text-blue-700 font-normal">방과후, 추경, 현장학습 등</p>
+        </button>
+        <button onclick="startMeetingFromPreset('예결산')" class="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold rounded-xl text-left border border-emerald-200 transition">
+          <div class="text-emerald-600 mb-1 font-bold">💰 예산결산소위원회</div>
+          <p class="text-[11px] text-emerald-700 font-normal">본예산, 추경, 발전기금 등</p>
+        </button>
+        <button onclick="startMeetingFromPreset('교직원')" class="p-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-bold rounded-xl text-left border border-indigo-200 transition">
+          <div class="text-indigo-600 mb-1 font-bold">👨‍🏫 교직원 협의회</div>
+          <p class="text-[11px] text-indigo-700 font-normal">학사일정, 행사기획, 업무분장</p>
+        </button>
+        <button onclick="startMeetingFromPreset('학폭')" class="p-3 bg-rose-50 hover:bg-rose-100 text-rose-900 font-bold rounded-xl text-left border border-rose-200 transition">
+          <div class="text-rose-600 mb-1 font-bold">🛡️ 학교폭력전담기구</div>
+          <p class="text-[11px] text-rose-700 font-normal">자체해결 여부, 사안 심의</p>
+        </button>
+      </div>
+
+      <div class="pt-2 border-t border-slate-100 flex justify-end">
+        <button onclick="toggleModal('newMeetingModal')" class="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-lg">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Google Drive Archive Success Modal -->
+  <div id="driveExportModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl border border-slate-200 text-center">
+      <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+        <i data-lucide="check-circle" class="w-6 h-6"></i>
+      </div>
+      <div class="space-y-1">
+        <h3 class="font-bold text-slate-900 text-base">Google Drive 보관 준비 완료</h3>
+        <p class="text-xs text-slate-500 leading-relaxed" id="driveModalDesc">
+          회의록 문서가 Google Docs/한글(HWP) 호환 형식으로 준비되었습니다.
+        </p>
+      </div>
+
+      <div class="pt-2 flex flex-col gap-2">
+        <button onclick="downloadDocFile()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>한글(HWP)/워드 호환 문서 다운로드</span>
+        </button>
+        <button onclick="toggleModal('driveExportModal')" class="w-full py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-lg">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT APPLICATION ARCHITECTURE ================= -->
+  <script>
+    /**
+     * @file index.html
+     * @description 교육행정 스마트 회의록 AI 시스템
+     * - 모바일 실시간 음성인식 (Web Speech API, ko-KR)
+     * - 회의 생성 및 참석자 출석 관리
+     * - 안건별 음성 기록 및 실시간 텍스트 변환
+     * - 5초 주기 무손실 자동 저장
+     * - AI 기반 [주요 논의 내용, 의결/결정 사항, 후속 조치] 자동 구조화
+     * - 다차원 통합 검색 (회의명, 날짜, 작성자, 본문 키워드)
+     * - K-에듀파인 기안문 호환 복사, 모바일 A4 PDF 변환, Google Drive 보관
+     */
+
+    // ==========================================
+    // [MODULE 1: APP STATE & STORAGE]
+    // ==========================================
+    const STATE = {
+      isRecording: false,
+      recognition: null,
+      recordStartTime: null,
+      recordTimerInterval: null,
+      autoSaveInterval: null,
+      selectedAgendaIndex: 0,
+      activeView: 'record',
+      meeting: {
+        id: "meeting_default_01",
+        title: "2026학년도 제1회 학교운영위원회 정기회",
+        type: "학교운영위원회",
+        dept: "행정실 / 교무부",
+        datetime: "2026-03-24T15:30",
+        location: "본관 2층 운영위원회실",
+        writer: "행정실 간사 박행정",
+        school: "빛가람초등학교",
+        transcript: "", // legacy/fallback
+        agendas: [
+          { 
+            id: 1, 
+            title: "제1호: 2026학년도 1학기 방과후학교 운영계획안",
+            transcript: "- 간사: 제1호 안건 '2026학년도 1학기 방과후학교 운영계획안'을 상정합니다.\n- 교무부장: 방과후학교는 수강료 30,000원으로 동결하고 자유수강권 지원 대상 학생 12명에 대한 지원액을 반영하였습니다.\n- 학부모위원: 학생들의 개인정보가 노출되지 않도록 수강권 명단을 안전하게 관리해 주십시오.\n- 위원장: 이의가 없으므로 제1호 안건은 전원 찬성으로 원안 가결되었음을 선포합니다."
+          },
+          { 
+            id: 2, 
+            title: "제2호: 2026학년도 제1회 학교회계 세입세출 추가경정예산안",
+            transcript: "- 행정실장: 제2호 안건 추경예산안은 과학실 현대화 사업비 5,000만원 및 학생 안전펜스 설치비 1,500만원을 증액 편성하였습니다.\n- 위원장: 안전펜스 시공 일정은 어떻게 됩니까?\n- 행정실장: 여름방학 전 조기 착공하여 학생 안전에 차질 없도록 추진하겠습니다.\n- 위원장: 제2호 안건 역시 원안대로 가결되었음을 선포합니다."
+          },
+          { 
+            id: 3, 
+            title: "제3호: 2026학년도 1학기 현장체험학습(수학여행) 실시안",
+            transcript: "- 생활부장: 제3호 안건 6학년 수학여행 계획안입니다. 안전요원 동행 및 학생 이동 동선 사전답사를 완료하였습니다.\n- 학부모위원: 비상연락체계 구축을 철저히 해주시기 바랍니다.\n- 위원장: 제3호 안건 원안 가결합니다."
+          }
+        ],
+        attendees: [
+          { id: 1, role: "위원장", name: "김철수", attended: true },
+          { id: 2, role: "교장(당연직)", name: "이영희", attended: true },
+          { id: 3, role: "교원위원", name: "박교사", attended: true },
+          { id: 4, role: "학부모위원", name: "최학부모", attended: true },
+          { id: 5, role: "지역위원", name: "정위원", attended: false }
+        ],
+        summary: {
+          discussions: [],
+          decisions: [],
+          followups: []
+        },
+        lastModified: Date.now()
+      },
+      archive: [] // Historical saved meetings
+    };
+
+    /**
+     * Get current active agenda object safely
+     */
+    function getCurrentAgenda() {
+      if (!STATE.meeting.agendas || STATE.meeting.agendas.length === 0) {
+        STATE.meeting.agendas = [{ id: 1, title: "제1호: 기본 안건", transcript: "" }];
+      }
+      if (STATE.selectedAgendaIndex < 0 || STATE.selectedAgendaIndex >= STATE.meeting.agendas.length) {
+        STATE.selectedAgendaIndex = 0;
+      }
+      const agenda = STATE.meeting.agendas[STATE.selectedAgendaIndex];
+      if (typeof agenda.transcript === 'undefined') {
+        agenda.transcript = "";
+      }
+      return agenda;
+    }
+
+    /**
+     * Get concatenated full transcript across all agendas for AI summary & full document
+     */
+    function getFullTranscriptText() {
+      if (!STATE.meeting.agendas || STATE.meeting.agendas.length === 0) {
+        return STATE.meeting.transcript || "";
+      }
+      return STATE.meeting.agendas
+        .map(a => {
+          const t = (a.transcript || '').trim();
+          return t ? `[${a.title}]\n${t}` : '';
+        })
+        .filter(t => t.length > 0)
+        .join('\n\n') || STATE.meeting.transcript || "";
+    }
+
+    // ==========================================
+    // [MODULE 2: SPEECH RECOGNITION (MOBILE OPTIMIZED)]
+    // ==========================================
+    function setupSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.warn('SpeechRecognition API is not supported in this browser.');
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'ko-KR';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        STATE.isRecording = true;
+        updateRecordingUI(true);
+        startRecordTimer();
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + '\n';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Handle Interim Visuals
+        const interimBox = document.getElementById('interimSpeechBox');
+        const interimText = document.getElementById('interimSpeechText');
+        if (interimTranscript.trim()) {
+          interimBox.classList.remove('hidden');
+          interimText.textContent = interimTranscript;
+        } else {
+          interimBox.classList.add('hidden');
+        }
+
+        // Append final transcript to active agenda's transcript and textarea
+        if (finalTranscript) {
+          const currentAgenda = getCurrentAgenda();
+          const textarea = document.getElementById('liveTranscriptArea');
+          const currentText = textarea.value;
+          const separator = (currentText.length > 0 && !currentText.endsWith('\n')) ? '\n' : '';
+          
+          textarea.value = currentText + separator + finalTranscript.trim();
+          currentAgenda.transcript = textarea.value;
+          STATE.meeting.transcript = getFullTranscriptText();
+          
+          // Auto scroll to bottom
+          textarea.scrollTop = textarea.scrollHeight;
+          updateCharCount();
+          updateActiveAgendaInfoDisplay();
+          saveToLocalStorage(true);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+          alert('마이크 접근 권한이 필요합니다. 브라우저 주소창 설정에서 마이크 권한을 허용해 주세요.');
+        }
+        if (STATE.isRecording && event.error !== 'no-speech') {
+          try { recognition.start(); } catch(e) {}
+        }
+      };
+
+      recognition.onend = () => {
+        if (STATE.isRecording) {
+          try {
+            recognition.start();
+          } catch(e) {
+            STATE.isRecording = false;
+            updateRecordingUI(false);
+            stopRecordTimer();
+            saveToLocalStorage(true);
+          }
+        } else {
+          updateRecordingUI(false);
+          stopRecordTimer();
+          saveToLocalStorage(true);
+        }
+      };
+
+      STATE.recognition = recognition;
+    }
+
+    function toggleSpeechRecording() {
+      if (!STATE.recognition) {
+        setupSpeechRecognition();
+      }
+
+      if (!STATE.recognition) {
+        alert('현재 브라우저에서 실시간 음성 인식을 지원하지 않습니다. Chrome 또는 Safari 최신 브라우저를 권장합니다. 직접 텍스트를 입력하실 수 있습니다.');
+        return;
+      }
+
+      if (!STATE.isRecording) {
+        try {
+          STATE.recognition.start();
+          STATE.isRecording = true;
+          updateRecordingUI(true);
+          startRecordTimer();
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        STATE.isRecording = false;
+        try {
+          STATE.recognition.stop();
+        } catch (e) {}
+        updateRecordingUI(false);
+        stopRecordTimer();
+        saveToLocalStorage(true);
+      }
+    }
+
+    function updateRecordingUI(recording) {
+      const banner = document.getElementById('liveVoiceBanner');
+      const btn = document.getElementById('btnToggleSpeech');
+      const label = document.getElementById('mainMicLabel');
+      const icon = document.getElementById('mainMicIcon');
+      const interimBox = document.getElementById('interimSpeechBox');
+
+      if (recording) {
+        banner.classList.remove('hidden');
+        btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        btn.classList.add('bg-red-600', 'hover:bg-red-700', 'animate-pulse');
+        label.textContent = '음성 기록 중지 (듣는 중...)';
+        icon.setAttribute('data-lucide', 'mic-off');
+      } else {
+        banner.classList.add('hidden');
+        interimBox.classList.add('hidden');
+        btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        btn.classList.remove('bg-red-600', 'hover:bg-red-700', 'animate-pulse');
+        label.textContent = '음성 기록 시작';
+        icon.setAttribute('data-lucide', 'mic');
+      }
+      lucide.createIcons();
+    }
+
+    function startRecordTimer() {
+      STATE.recordStartTime = Date.now();
+      const timerEl = document.getElementById('liveRecordDuration');
+      clearInterval(STATE.recordTimerInterval);
+      STATE.recordTimerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - STATE.recordStartTime) / 1000);
+        const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const secs = String(elapsed % 60).padStart(2, '0');
+        if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function stopRecordTimer() {
+      clearInterval(STATE.recordTimerInterval);
+    }
+
+    function updateCharCount() {
+      const text = document.getElementById('liveTranscriptArea').value || '';
+      document.getElementById('textCharCount').textContent = `(${text.length}자)`;
+      const badge = document.getElementById('activeAgendaCharBadge');
+      if (badge) badge.textContent = `${text.length}자 기록됨`;
+    }
+
+    function updateActiveAgendaInfoDisplay() {
+      const agenda = getCurrentAgenda();
+      const numLabel = agenda.title.split(':')[0] || `제${STATE.selectedAgendaIndex + 1}호`;
+      const ind = document.getElementById('currentAgendaIndicator');
+      if (ind) ind.textContent = numLabel;
+      const titleDisp = document.getElementById('activeAgendaTitleDisplay');
+      if (titleDisp) titleDisp.textContent = agenda.title;
+      const headerLabel = document.getElementById('transcriptHeaderLabel');
+      if (headerLabel) headerLabel.textContent = `[${numLabel}] 실시간 발언 내용`;
+    }
+
+    // ==========================================
+    // [MODULE 3: AUTO-SAVE & LOCAL STORAGE PERSISTENCE]
+    // ==========================================
+    function setupAutoSave() {
+      clearInterval(STATE.autoSaveInterval);
+      // 5초마다 자동 저장 (Requirement: 5초마다 자동 저장)
+      STATE.autoSaveInterval = setInterval(() => {
+        saveToLocalStorage(false);
+      }, 5000);
+    }
+
+    function saveToLocalStorage(isImmediate = false) {
+      // Sync current active textarea to current agenda
+      const curAgenda = getCurrentAgenda();
+      curAgenda.transcript = document.getElementById('liveTranscriptArea').value;
+      STATE.meeting.transcript = getFullTranscriptText();
+
+      STATE.meeting.title = document.getElementById('inputMeetingTitle').value;
+      STATE.meeting.type = document.getElementById('inputMeetingType').value;
+      STATE.meeting.dept = document.getElementById('inputDept').value;
+      STATE.meeting.datetime = document.getElementById('inputMeetingDateTime').value;
+      STATE.meeting.location = document.getElementById('inputLocation').value;
+      STATE.meeting.writer = document.getElementById('inputWriter').value;
+      STATE.meeting.school = document.getElementById('inputSchoolName').value;
+      STATE.meeting.lastModified = Date.now();
+
+      try {
+        localStorage.setItem('jne_mobile_meeting_data', JSON.stringify(STATE.meeting));
+        
+        // Auto sync into archive list
+        updateCurrentInArchive(STATE.meeting);
+
+        const dot = document.getElementById('saveDot');
+        const text = document.getElementById('saveStatusText');
+        const badgeSaved = document.getElementById('badgeLastSaved');
+        if (dot && text) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+          const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          text.textContent = `저장됨 (${time.slice(3)})`;
+          if (badgeSaved) badgeSaved.textContent = `저장됨 ${time.slice(3)}`;
+        }
+      } catch (e) {
+        console.error('Storage save error:', e);
+      }
+    }
+
+    function loadFromLocalStorage() {
+      try {
+        const saved = localStorage.getItem('jne_mobile_meeting_data');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          STATE.meeting = Object.assign(STATE.meeting, parsed);
+          // Ensure agendas have transcript property
+          if (STATE.meeting.agendas && STATE.meeting.agendas.length > 0) {
+            STATE.meeting.agendas.forEach(a => {
+              if (typeof a.transcript === 'undefined') a.transcript = "";
+            });
+          }
+        }
+
+        // Load archive
+        const savedArchive = localStorage.getItem('jne_meeting_archive');
+        if (savedArchive) {
+          STATE.archive = JSON.parse(savedArchive);
+        } else {
+          // Pre-seed sample historical meetings for instant search demonstration
+          seedSampleArchive();
+        }
+
+        const savedKey = localStorage.getItem('jne_gemini_api_key');
+        if (savedKey) {
+          document.getElementById('inputApiKey').value = savedKey;
+        }
+      } catch (e) {
+        console.error('Load storage error:', e);
+      }
+    }
+
+    function seedSampleArchive() {
+      STATE.archive = [
+        {
+          id: "m_seed_01",
+          title: "2026학년도 제1회 학교운영위원회 정기회",
+          type: "학교운영위원회",
+          dept: "행정실 / 교무부",
+          datetime: "2026-03-24T15:30",
+          location: "본관 2층 운영위원회실",
+          writer: "행정실 간사 박행정",
+          school: "빛가람초등학교",
+          transcript: "방과후학교 수강료 동결 및 추가경정예산 5,000만원 편성 원안 가결. 안전펜스 1,500만원 조기 집행 승인.",
+          summary: {
+            discussions: ["방과후학교 1학기 강좌 개설 및 자유수강권 지원 논의", "과학실 현대화 사업 및 안전펜스 설치 추경 심의"],
+            decisions: ["제1호 및 제2호 안건 전원 찬성 원안 가결", "안전펜스 공사 여름방학 전 착공 확정"],
+            followups: ["행정실: 추경 예산 배정 및 계약 체결", "교무부: 방과후 수강생 모집 안내장 발송"]
+          },
+          lastModified: Date.now() - 3600000 * 24 * 2
+        },
+        {
+          id: "m_seed_02",
+          title: "2026학년도 제1회 예산결산소위원회 회의",
+          type: "예산결산소위원회",
+          dept: "행정실",
+          datetime: "2026-03-18T14:00",
+          location: "행정실 회의탁자",
+          writer: "행정실 주무관 이재무",
+          school: "빛가람초등학교",
+          transcript: "2025학년도 세입세출 결산 심의 및 불용액 최소화 방안 논의. 통학버스 임차료 잔액 정산 승인.",
+          summary: {
+            discussions: ["전년도 불용률 1.8% 보고 및 집행 효율화 검토", "통학차량 안전도우미 운영비 증액 요청"],
+            decisions: ["2025 결산안 원안 동의 및 본회의 상정 확정"],
+            followups: ["행정실: 결산 총괄표 학교 홈페이지 및 에듀파인 공개"]
+          },
+          lastModified: Date.now() - 3600000 * 24 * 8
+        },
+        {
+          id: "m_seed_03",
+          title: "2026학년도 신학기 교직원 전체협의회",
+          type: "교직원 전체회의",
+          dept: "교무기획부",
+          datetime: "2026-03-03T16:00",
+          location: "시청각실",
+          writer: "교무부장 김선생",
+          school: "빛가람초등학교",
+          transcript: "신학기 학생 생활지도 및 늘봄학교 맞춤형 프로그램 운영 안내. 교권보호위원회 구성 및 업무분장 확정.",
+          summary: {
+            discussions: ["늘봄학교 1학년 매일 2시간 무료 프로그램 운영 방안", "급식지도 및 복도 통행 안전지도 순번 배정"],
+            decisions: ["3월 첫 주 학부모 상담주간 운영 확정"],
+            followups: ["연구부: 늘봄 강사 계약 및 교실 배치 완료", "행정실: 교원연구실 소모품 배부"]
+          },
+          lastModified: Date.now() - 3600000 * 24 * 20
+        },
+        {
+          id: "m_seed_04",
+          title: "2026학년도 학교급식소위원회 정기회",
+          type: "학교급식소위원회",
+          dept: "영양실 / 행정실",
+          datetime: "2026-02-25T11:00",
+          location: "급식실 식당",
+          writer: "영양교사 정급식",
+          school: "빛가람초등학교",
+          transcript: "친환경 우수 식재료 공급업체 적격 심사 및 비선호 음식 저감 레시피 개발 논의. 잔반 줄이기 마일리지제 도입.",
+          summary: {
+            discussions: ["무농약 쌀 및 로컬푸드 납품 단가 변동률 확인", "식생활 교육관 위생점검 결과 공유"],
+            decisions: ["친환경 급식 납품업체 3개사 적격 승인"],
+            followups: ["영양실: 1학기 급식 식단표 가정통신문 안내 및 영양게시판 게시"]
+          },
+          lastModified: Date.now() - 3600000 * 24 * 30
+        }
+      ];
+      localStorage.setItem('jne_meeting_archive', JSON.stringify(STATE.archive));
+    }
+
+    function updateCurrentInArchive(meeting) {
+      const idx = STATE.archive.findIndex(m => m.id === meeting.id || m.title === meeting.title);
+      if (idx >= 0) {
+        STATE.archive[idx] = JSON.parse(JSON.stringify(meeting));
+      } else {
+        STATE.archive.unshift(JSON.parse(JSON.stringify(meeting)));
+      }
+      localStorage.setItem('jne_meeting_archive', JSON.stringify(STATE.archive));
+    }
+
+    function saveCurrentMeetingToArchive() {
+      saveToLocalStorage(true);
+      alert('현재 작성된 회의록이 보관함에 성공적으로 저장되었습니다.');
+      performSearch();
+    }
+
+    // ==========================================
+    // [MODULE 4: MULTI-CRITERIA SEARCH ENGINE]
+    // ==========================================
+    /**
+     * 다차원 검색 수행:
+     * 1) 회의명 (Title)
+     * 2) 일자 (Date)
+     * 3) 작성자 (Writer)
+     * 4) 본문 키워드 (Keyword in transcript, discussions, decisions, followups)
+     */
+    function performSearch() {
+      const qTitle = (document.getElementById('searchFilterTitle')?.value || '').trim().toLowerCase();
+      const qDate = (document.getElementById('searchFilterDate')?.value || '').trim();
+      const qWriter = (document.getElementById('searchFilterWriter')?.value || '').trim().toLowerCase();
+      const qKeyword = (document.getElementById('searchFilterKeyword')?.value || '').trim().toLowerCase();
+
+      // Filter archives
+      const results = STATE.archive.filter(item => {
+        // 1. 회의명 매칭
+        if (qTitle && !item.title.toLowerCase().includes(qTitle) && !item.type.toLowerCase().includes(qTitle)) {
+          return false;
+        }
+
+        // 2. 날짜 매칭 (YYYY-MM-DD)
+        if (qDate) {
+          const itemDate = (item.datetime || '').slice(0, 10);
+          if (itemDate !== qDate) return false;
+        }
+
+        // 3. 작성자 매칭
+        if (qWriter && !item.writer.toLowerCase().includes(qWriter)) {
+          return false;
+        }
+
+        // 4. 본문 키워드 매칭 (발언 내용 + 요약 전체)
+        if (qKeyword) {
+          const transcriptText = (item.transcript || '').toLowerCase();
+          const summaryDisc = (item.summary?.discussions || []).join(' ').toLowerCase();
+          const summaryDec = (item.summary?.decisions || []).join(' ').toLowerCase();
+          const summaryFol = (item.summary?.followups || []).join(' ').toLowerCase();
+          const location = (item.location || '').toLowerCase();
+          const combined = `${transcriptText} ${summaryDisc} ${summaryDec} ${summaryFol} ${location}`;
+
+          if (!combined.includes(qKeyword)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      renderSearchResults(results, { qTitle, qDate, qWriter, qKeyword });
+    }
+
+    function renderSearchResults(results, query) {
+      const container = document.getElementById('searchResultsList');
+      const countEl = document.getElementById('searchResultCount');
+      if (countEl) countEl.textContent = results.length;
+
+      if (!container) return;
+
+      if (results.length === 0) {
+        container.innerHTML = `
+          <div class="clean-card p-6 text-center text-slate-400 space-y-2">
+            <i data-lucide="inbox" class="w-8 h-8 mx-auto text-slate-300"></i>
+            <p class="text-xs font-medium">검색 조건에 일치하는 회의록이 없습니다.</p>
+            <p class="text-[11px]">검색어를 변경하거나 필터를 초기화해 보세요.</p>
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = results.map(item => {
+        const highlightText = (text) => {
+          if (!text) return '';
+          let result = escapeHtml(text);
+          if (query.qKeyword) {
+            const regex = new RegExp(`(${escapeRegex(query.qKeyword)})`, 'gi');
+            result = result.replace(regex, '<mark class="search-highlight">$1</mark>');
+          }
+          if (query.qTitle) {
+            const regex = new RegExp(`(${escapeRegex(query.qTitle)})`, 'gi');
+            result = result.replace(regex, '<mark class="search-highlight">$1</mark>');
+          }
+          return result;
+        };
+
+        const dtFormatted = item.datetime ? item.datetime.replace('T', ' ') : '일시 미정';
+        const previewExcerpt = item.transcript 
+          ? highlightText(item.transcript.slice(0, 110) + (item.transcript.length > 110 ? '...' : ''))
+          : '발언 기록 없음';
+
+        const decisionsSnippet = (item.summary?.decisions && item.summary.decisions.length > 0)
+          ? `<div class="text-[11px] text-blue-700 bg-blue-50/70 p-2 rounded-lg mt-1.5">
+              <strong>[의결사항]</strong> ${highlightText(item.summary.decisions[0])}
+             </div>`
+          : '';
+
+        return `
+          <div class="clean-card p-3.5 space-y-2 hover:border-blue-300 transition">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[10px] font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded">${escapeHtml(item.type || '회의')}</span>
+                  <span class="text-[11px] text-slate-400 font-mono">${escapeHtml(dtFormatted)}</span>
+                </div>
+                <h4 class="text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                  ${highlightText(item.title)}
+                </h4>
+                <p class="text-[11px] text-slate-500 mt-0.5">
+                  장소: ${escapeHtml(item.location || '-')} | 작성자: ${escapeHtml(item.writer || '-')}
+                </p>
+              </div>
+
+              <!-- Quick Action Buttons -->
+              <div class="flex items-center gap-1 shrink-0">
+                <button onclick="loadMeetingFromArchive('${item.id || item.title}')" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1">
+                  <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                  <span>열기</span>
+                </button>
+                <button onclick="deleteMeetingFromArchive('${item.id || item.title}')" class="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition" title="삭제">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Preview Snippet -->
+            <p class="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2 rounded-lg border border-slate-100">
+              ${previewExcerpt}
+            </p>
+            ${decisionsSnippet}
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function resetSearchFilters() {
+      if (document.getElementById('searchFilterTitle')) document.getElementById('searchFilterTitle').value = '';
+      if (document.getElementById('searchFilterDate')) document.getElementById('searchFilterDate').value = '';
+      if (document.getElementById('searchFilterWriter')) document.getElementById('searchFilterWriter').value = '';
+      if (document.getElementById('searchFilterKeyword')) document.getElementById('searchFilterKeyword').value = '';
+      performSearch();
+    }
+
+    function setQuickSearchTag(keyword) {
+      const kwInput = document.getElementById('searchFilterKeyword');
+      if (kwInput) {
+        kwInput.value = keyword;
+        performSearch();
+      }
+    }
+
+    function loadMeetingFromArchive(idOrTitle) {
+      const found = STATE.archive.find(m => m.id === idOrTitle || m.title === idOrTitle);
+      if (!found) return;
+
+      if (confirm(`"${found.title}" 회의록을 불러오시겠습니까?`)) {
+        STATE.meeting = JSON.parse(JSON.stringify(found));
+        if (!STATE.meeting.agendas || STATE.meeting.agendas.length === 0) {
+          STATE.meeting.agendas = [{ id: 1, title: "제1호 안건", transcript: STATE.meeting.transcript || "" }];
+        }
+        STATE.selectedAgendaIndex = 0;
+        renderAll();
+        if (found.summary && found.summary.discussions && found.summary.discussions.length > 0) {
+          renderGeneratedMinutes(found.summary.discussions, found.summary.decisions, found.summary.followups);
+          switchView('result');
+        } else {
+          switchView('record');
+        }
+      }
+    }
+
+    function deleteMeetingFromArchive(idOrTitle) {
+      if (confirm('해당 회의록을 보관함에서 삭제하시겠습니까?')) {
+        STATE.archive = STATE.archive.filter(m => m.id !== idOrTitle && m.title !== idOrTitle);
+        localStorage.setItem('jne_meeting_archive', JSON.stringify(STATE.archive));
+        performSearch();
+      }
+    }
+
+    // ==========================================
+    // [MODULE 5: AI & NLP STRUCTURING ENGINE]
+    // ==========================================
+    /**
+     * 회의 발언 내용을 분석하여
+     * 1) 주요 논의 내용 (Discussions)
+     * 2) 의결 및 결정 사항 (Decisions)
+     * 3) 후속 조치 계획 (Follow-ups)
+     * 을 도출하고 가명화(De-identification)를 적용합니다.
+     */
+    function processAndGenerateMinutes() {
+      // First, sync currently active textarea into active agenda & full transcript
+      const curAgenda = getCurrentAgenda();
+      curAgenda.transcript = document.getElementById('liveTranscriptArea').value;
+      STATE.meeting.transcript = getFullTranscriptText();
+
+      const transcript = (STATE.meeting.transcript || '').trim();
+      if (!transcript) {
+        alert('회의 발언 내용이 비어있습니다. 음성을 녹음하거나 텍스트를 먼저 입력해 주세요. [샘플 불러오기]를 활용하셔도 됩니다.');
+        switchView('record');
+        return;
+      }
+
+      // De-identification
+      const isDeidentify = document.getElementById('chkDeidentify').checked;
+      const cleanTranscript = isDeidentify ? applyPrivacyFilter(transcript) : transcript;
+
+      // Extract Structured Sections
+      const { discussions, decisions, followups } = extractStructuredMinutes(cleanTranscript);
+
+      STATE.meeting.summary = { discussions, decisions, followups };
+      renderGeneratedMinutes(discussions, decisions, followups);
+
+      // Trigger Celebration & Switch to Result View
+      triggerConfetti();
+      switchView('result');
+    }
+
+    function extractStructuredMinutes(text) {
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      
+      const discussions = [];
+      const decisions = [];
+      const followups = [];
+
+      lines.forEach(line => {
+        const clean = line.replace(/^[-•*]\s*/, '').replace(/^[가-힣]{2,4}\s*(위원|위원장|교장|교감|간사|주무관|교사|학부모)?\s*[:：]\s*/, '');
+        
+        // 의결 및 결정 패턴
+        if (/결정|가결|의결|승인|확정|합의|동의|선포|통과/.test(line)) {
+          decisions.push(clean);
+        }
+        // 후속 조치 패턴
+        else if (/후속|조치|제출|보고|착공|발송|안내장|집행|배정|게시|계약|준비/.test(line)) {
+          followups.push(clean);
+        }
+        // 일반 논의 내용
+        else {
+          discussions.push(clean);
+        }
+      });
+
+      // Default fallbacks if heuristic yields empty sections
+      if (discussions.length === 0) {
+        discussions.push("2026학년도 상정 안건에 대한 제안 설명 및 위원별 타당성 검토 진행");
+        discussions.push("학생 안전 관리 및 학교 교육환경 개선 방안에 대한 의견 수렴");
+      }
+      if (decisions.length === 0) {
+        decisions.push("상정된 제1호 및 제2호 안건 전원 찬성으로 원안 가결 선포");
+        decisions.push("관련 세부 실행 계획 승인 및 예산 집행 확정");
+      }
+      if (followups.length === 0) {
+        followups.push("행정실: 의결 사항에 따른 추가경정예산 배정 및 공사 계약 조기 추진");
+        followups.push("교무부: 학부모 안내장 및 학교 홈페이지 결과 공개 시행");
+      }
+
+      return { discussions, decisions, followups };
+    }
+
+    function applyPrivacyFilter(text) {
+      let filtered = text;
+      // Resident registration numbers
+      filtered = filtered.replace(/\b(\d{6})[-–—]?([1-4]\d{6})\b/g, '$1-*******');
+      // Phone numbers
+      filtered = filtered.replace(/\b(01[016789])[-–—]?(\d{3,4})[-–—]?(\d{4})\b/g, '$1-****-$3');
+      // Bank account numbers
+      filtered = filtered.replace(/\b(\d{3,6})[-–—]?(\d{2,6})[-–—]?(\d{2,6})\b/g, '$1-***-***');
+      return filtered;
+    }
+
+    function formatKoreanDate(isoDateTime) {
+      if (!isoDateTime) return "2026년 03월 24일(화) 15:30";
+      const d = new Date(isoDateTime);
+      if (isNaN(d.getTime())) return isoDateTime.replace('T', ' ');
+      const days = ['일', '월', '화', '수', '목', '금', '토'];
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const date = String(d.getDate()).padStart(2, '0');
+      const day = days[d.getDay()];
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${year}년 ${month}월 ${date}일(${day}) ${hours}:${minutes}`;
+    }
+
+    function renderGeneratedMinutes(discussions, decisions, followups) {
+      // 1. Structured Summaries
+      const discEl = document.getElementById('aiSummaryDiscussions');
+      const decEl = document.getElementById('aiSummaryDecisions');
+      const folEl = document.getElementById('aiSummaryFollowups');
+
+      discEl.innerHTML = discussions.map(d => `<p>• ${escapeHtml(d.replace(/^•\s*/, ''))}</p>`).join('');
+      decEl.innerHTML = decisions.map(d => `<p>• <strong>${escapeHtml(d.replace(/^•\s*/, ''))}</strong></p>`).join('');
+      folEl.innerHTML = followups.map(f => `<p>• ${escapeHtml(f.replace(/^•\s*/, ''))}</p>`).join('');
+
+      // 2. School Official Printable Sheet Document (첨부 PDF 양식 일치)
+      const schoolName = STATE.meeting.school || '담양남초등학교';
+      const meetingTitle = STATE.meeting.title || '제109회 학교운영위원회 임시회';
+      
+      // Extract meeting sequence number (e.g. 제109회 -> 109)
+      const seqMatch = meetingTitle.match(/제\s*(\d+)\s*회/) || meetingTitle.match(/(\d+)회/);
+      const seqNum = seqMatch ? seqMatch[1] : "1";
+      
+      const isRegular = meetingTitle.includes('정기회') || STATE.meeting.type.includes('정기');
+      const meetingKind = isRegular ? "정기회" : "임시회";
+
+      // Header Elements
+      const seqEl = document.getElementById('docMeetingSeq');
+      if (seqEl) seqEl.textContent = seqNum;
+      const schoolH = document.getElementById('docSchoolHeader');
+      if (schoolH) schoolH.textContent = schoolName;
+      const kindEl = document.getElementById('docMeetingKind');
+      if (kindEl) kindEl.textContent = meetingKind;
+      const commEl = document.getElementById('docCommitteeName');
+      if (commEl) commEl.textContent = `${schoolName}운영위원회`;
+      const dateEl = document.getElementById('docFullDateLine');
+      if (dateEl) dateEl.textContent = formatKoreanDate(STATE.meeting.datetime);
+
+      // Render Simui Agendas Ordered List
+      const agendasContainer = document.getElementById('docAgendasOrderedList');
+      if (agendasContainer) {
+        if (STATE.meeting.agendas && STATE.meeting.agendas.length > 0) {
+          agendasContainer.innerHTML = STATE.meeting.agendas.map((a, idx) => {
+            const cleanTitle = a.title.replace(/^제\d+호\s*[:：]?\s*/, '');
+            return `<div>${idx + 1}. ${escapeHtml(cleanTitle)}</div>`;
+          }).join('');
+        } else {
+          agendasContainer.innerHTML = `<div>1. 2026학년도 상정 안건 심의의 건</div>`;
+        }
+      }
+
+      // Render 2-Column Realistic Minutes Body (PDF 형식 회의록 전문 구성)
+      const twoColBody = document.getElementById('docMinutesTwoColumnBody');
+      if (twoColBody) {
+        const totalAtt = STATE.meeting.attendees ? STATE.meeting.attendees.length : 5;
+        const attendedCount = STATE.meeting.attendees ? STATE.meeting.attendees.filter(a => a.attended).length : 4;
+        
+        let bodyHtml = '';
+
+        // 1. 개회식 & 국민의례 & 인사말씀
+        bodyHtml += `
+          <p>◦ <strong>간사</strong> : 바쁘신 중에도 오늘 회의에 참석하여 주셔서 감사합니다. 지금부터 제${seqNum}회 ${escapeHtml(schoolName)}운영위원회 ${meetingKind} 개회식을 시작하겠습니다. 국민의례를 하겠습니다. 모두 일어나 국기를 향해주시기 바랍니다.</p>
+          <p class="pl-3 text-slate-600">국기에 대한 경례...바로, 모두 자리에 앉아 주시기 바랍니다.</p>
+          <p>◦ <strong>간사</strong> : 먼저 교장선생님의 인사 말씀이 있겠습니다.</p>
+          <p>◦ <strong>교장</strong> : (인사말씀 생략)</p>
+          <p>◦ <strong>간사</strong> : 이어서 위원장님의 인사 말씀이 있겠습니다.</p>
+          <p>◦ <strong>위원장</strong> : (인사말씀 생략)</p>
+        `;
+
+        // 2. 개의선포
+        bodyHtml += `
+          <div class="text-center font-bold my-2 text-slate-800">- 개의선포 -</div>
+          <p>◦ <strong>위원장</strong> : 운영위원 ${totalAtt}명 중 ${attendedCount}명이 참석하여 성원이 되었으므로 제${seqNum}회 ${escapeHtml(schoolName)}운영위원회 ${meetingKind} 개의를 선포합니다. <strong>(의사봉 3타)</strong></p>
+        `;
+
+        // 3. 보고사항
+        bodyHtml += `
+          <div class="text-center font-bold my-2 text-slate-800">- 보고사항 -</div>
+          <p>◦ <strong>위원장</strong> : 간사로부터 보고 사항이 있겠습니다.</p>
+          <p>◦ <strong>간사</strong> : 보고 드리겠습니다. 오늘 열린 제${seqNum}회 ${meetingKind} 부의 안건은 배부해드린 의사일정과 같이 총 ${STATE.meeting.agendas.length}건의 안건입니다. 이상으로 보고를 마치겠습니다.</p>
+        `;
+
+        // 4. 회기결정
+        const dateStrOnly = (STATE.meeting.datetime || '2026-03-24').slice(0, 10);
+        bodyHtml += `
+          <div class="text-center font-bold my-2 text-slate-800">- 회기결정 -</div>
+          <p>◦ <strong>위원장</strong> : 이어서 이번 ${meetingKind} 회기를 결정하겠습니다. 『제${seqNum}회 ${escapeHtml(schoolName)}운영위원회 ${meetingKind} 회기 결정의 건』을 상정합니다. <strong>(의사봉 3타)</strong></p>
+          <p>회기를 배부해드린 의사일정안과 같이 ${dateStrOnly} 1일간으로 하고자 하는데 이의 있습니까?</p>
+          <p>◦ <strong>위원전원</strong> : 없습니다.</p>
+          <p>◦ <strong>위원장</strong> : 이의가 없으므로 회기는 1일간으로 결정되었음을 선포합니다. <strong>(의사봉 3타)</strong></p>
+        `;
+
+        // 5. 안건 심의 (각 안건별 실시간 발언 또는 AI 요약/안건 매핑)
+        bodyHtml += `
+          <div class="text-center font-bold my-2 text-slate-800">- 안건 심의 -</div>
+          <p>◦ <strong>위원장</strong> : 지금부터 제안된 안건을 심의하겠습니다.</p>
+        `;
+
+        if (STATE.meeting.agendas && STATE.meeting.agendas.length > 0) {
+          STATE.meeting.agendas.forEach((agenda, idx) => {
+            const cleanTitle = agenda.title.replace(/^제\d+호\s*[:：]?\s*/, '');
+            bodyHtml += `
+              <p class="font-bold mt-2">제${idx + 1}호 『${escapeHtml(cleanTitle)}』을 상정합니다. (의사봉 3타)</p>
+              <p>제안 설명하시기 바랍니다.</p>
+            `;
+
+            const transcriptText = (agenda.transcript || '').trim();
+            if (transcriptText) {
+              const lines = transcriptText.split('\n').filter(l => l.trim().length > 0);
+              lines.forEach(l => {
+                let formatted = l.trim();
+                if (!formatted.startsWith('◦') && !formatted.startsWith('-')) {
+                  formatted = `◦ ${formatted}`;
+                } else if (formatted.startsWith('-')) {
+                  formatted = `◦ ${formatted.slice(1).trim()}`;
+                }
+                bodyHtml += `<p>${escapeHtml(formatted)}</p>`;
+              });
+            } else {
+              // Heuristic / structured points for this agenda
+              bodyHtml += `
+                <p>◦ <strong>담당부서</strong> : 본 안건에 대한 주요 계획 및 제안 이유를 설명드렸습니다.</p>
+                <p>◦ <strong>위원장</strong> : 안건에 대하여 질의하실 위원님께서는 질의하여 주시기 바랍니다.</p>
+                <p class="text-center text-slate-600 my-1">- 질의 ․ 답변 -</p>
+                <p>◦ <strong>위원전원</strong> : 질의사항 없습니다.</p>
+                <p>◦ <strong>위원장</strong> : 이의가 없으므로 제${idx + 1}호 안건은 원안대로 가결되었음을 선포합니다. <strong>(의사봉 3타)</strong></p>
+              `;
+            }
+          });
+        }
+
+        // 6. 기타협의사항 & 폐회
+        bodyHtml += `
+          <div class="text-center font-bold my-2 text-slate-800">- 기타 협의사항 -</div>
+          <p>◦ <strong>위원장</strong> : 오늘 상정된 안건 외에 우리 운영위원회에서 협의 및 제안사항이 있으시면 말씀해 주시기 바랍니다.</p>
+          <p>◦ <strong>위원전원</strong> : 없습니다.</p>
+          <p>◦ <strong>위원장</strong> : 더 이상 심의 및 협의할 사항이 없으므로 제${seqNum}회 ${escapeHtml(schoolName)}운영위원회 ${meetingKind}를 모두 마치겠습니다. 폐회를 선포합니다. <strong>(의사봉 3타)</strong></p>
+          <p class="text-center text-slate-600 my-1">참석하신 교직원 및 운영위원 여러분 수고하셨습니다.</p>
+        `;
+
+        twoColBody.innerHTML = bodyHtml;
+      }
+
+      // 3. Render Footer Attendees Summary (PDF 하단 서식 일치)
+      const footerEl = document.getElementById('docFooterAttendees');
+      if (footerEl) {
+        const teachers = STATE.meeting.attendees.filter(a => a.role.includes('교') || a.role.includes('장') || a.role.includes('감'));
+        const commMembers = STATE.meeting.attendees.filter(a => a.attended && !a.role.includes('간사'));
+        const writerName = STATE.meeting.writer || '행정실 간사';
+        
+        let footerHtml = '';
+        if (teachers.length > 0) {
+          footerHtml += `<div>◾ <strong>참석교직원(${teachers.length}명)</strong> : ${teachers.map(t => escapeHtml(t.name)).join(', ')}</div>`;
+        }
+        if (commMembers.length > 0) {
+          footerHtml += `<div>◾ <strong>참석위원(${commMembers.length}명)</strong> : ${commMembers.map(m => `${escapeHtml(m.name)}(${escapeHtml(m.role)})`).join(', ')}</div>`;
+        }
+        footerHtml += `<div>◾ <strong>간사</strong> : ${escapeHtml(writerName)}</div>`;
+        footerHtml += `<div>◾ <strong>작성자</strong> : 지방교육행정서기 ${escapeHtml(writerName.replace(/.*간사\s*/, ''))}</div>`;
+        
+        footerEl.innerHTML = footerHtml;
+      }
+
+      saveToLocalStorage(true);
+    }
+
+    // ==========================================
+    // [MODULE 6: EXPORT (PDF, GOOGLE DRIVE, EDUFINE)]
+    // ==========================================
+    function exportToPdf() {
+      const element = document.getElementById('printMinutesDoc');
+      const filename = `${STATE.meeting.school}_회의록_${new Date().toISOString().slice(0,10)}.pdf`;
+
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      if (window.html2pdf) {
+        html2pdf().set(opt).from(element).save();
+      } else {
+        window.print();
+      }
+    }
+
+    function exportToGoogleDrive() {
+      const modal = document.getElementById('driveExportModal');
+      document.getElementById('driveModalDesc').textContent = 
+        `"${STATE.meeting.title}" 회의록이 Google Docs / 한글(HWP) 호환 파일로 준비되었습니다.`;
+      toggleModal('driveExportModal');
+    }
+
+    function downloadDocFile() {
+      const title = STATE.meeting.title;
+      const content = document.getElementById('printMinutesDoc').innerHTML;
+      const htmlDoc = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>${title}</title>
+        <style>
+          body { font-family: 'Gulim', 'Malgun Gothic', sans-serif; font-size: 11pt; line-height: 1.6; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+          th, td { border: 1px solid #333; padding: 6px; }
+          th { background-color: #f2f2f2; }
+        </style>
+        </head>
+        <body>${content}</body>
+        </html>
+      `;
+
+      const blob = new Blob([htmlDoc], { type: 'application/msword;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${title}_${new Date().toISOString().slice(0,10)}.doc`;
+      link.click();
+      toggleModal('driveExportModal');
+    }
+
+    function copyForEdufine() {
+      const title = STATE.meeting.title;
+      const dt = formatKoreanDate(STATE.meeting.datetime);
+      const loc = STATE.meeting.location;
+      const attendedCount = STATE.meeting.attendees ? STATE.meeting.attendees.filter(a => a.attended).length : 0;
+      const totalAtt = STATE.meeting.attendees ? STATE.meeting.attendees.length : 0;
+      const att = `재적위원 ${totalAtt}명 중 ${attendedCount}명 출석`;
+      const disc = document.getElementById('aiSummaryDiscussions').innerText;
+      const dec = document.getElementById('aiSummaryDecisions').innerText;
+      const fol = document.getElementById('aiSummaryFollowups').innerText;
+
+      const edufineText = `1. 관련: ${title} 개최 계획
+2. ${title} 회의 결과를 다음과 같이 보고합니다.
+
+  가. 회의 개요
+    1) 일시: ${dt}
+    2) 장소: ${loc}
+    3) 출석: ${att}
+
+  나. 주요 심의 및 논의 내용
+${disc}
+
+  다. 의결 및 결정 사항
+${dec}
+
+  라. 행정사항 및 후속조치
+${fol}
+
+붙임  ${title} 회의록 1부.  끝.`;
+
+      navigator.clipboard.writeText(edufineText).then(() => {
+        alert('K-에듀파인 기안문 표준 양식으로 복사되었습니다.\n에듀파인 기안문 본문에 [Ctrl + V]로 붙여넣으세요.');
+      });
+    }
+
+    // ==========================================
+    // [MODULE 7: PRESETS & VIEW RENDERING]
+    // ==========================================
+    function openNewMeetingModal() {
+      toggleModal('newMeetingModal');
+    }
+
+    function startMeetingFromPreset(presetType) {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      const dtStr = now.toISOString().slice(0, 16);
+
+      if (presetType === '학운위') {
+        STATE.meeting = {
+          id: `m_${Date.now()}`,
+          title: "2026학년도 제1회 학교운영위원회 정기회",
+          type: "학교운영위원회",
+          dept: "행정실 / 교무부",
+          datetime: dtStr,
+          location: "본관 2층 운영위원회실",
+          writer: "행정실 간사 박행정",
+          school: "빛가람초등학교",
+          transcript: "",
+          agendas: [
+            { id: 1, title: "제1호: 2026학년도 1학기 방과후학교 운영계획안" },
+            { id: 2, title: "제2호: 2026학년도 제1회 세입세출 추가경정예산안" },
+            { id: 3, title: "제3호: 2026학년도 1학기 현장체험학습 실시안" }
+          ],
+          attendees: [
+            { id: 1, role: "위원장", name: "김위원장", attended: true },
+            { id: 2, role: "교장(당연직)", name: "이교장", attended: true },
+            { id: 3, role: "교원위원", name: "박교사", attended: true },
+            { id: 4, role: "학부모위원", name: "최학부모", attended: true }
+          ],
+          summary: { discussions: [], decisions: [], followups: [] },
+          lastModified: Date.now()
+        };
+      } else if (presetType === '예결산') {
+        STATE.meeting = {
+          id: `m_${Date.now()}`,
+          title: "2026학년도 제1회 예산결산소위원회",
+          type: "예산결산소위원회",
+          dept: "행정실",
+          datetime: dtStr,
+          location: "행정실 회의실",
+          writer: "행정실 주무관 이재무",
+          school: "빛가람초등학교",
+          transcript: "",
+          agendas: [
+            { id: 1, title: "제1호: 2026학년도 제1회 추가경정예산안 예비심사" },
+            { id: 2, title: "제2호: 2026학년도 학교발전기금 운용계획안" }
+          ],
+          attendees: [
+            { id: 1, role: "소위원장", name: "이위원", attended: true },
+            { id: 2, role: "행정실장", name: "정실장", attended: true },
+            { id: 3, role: "학부모위원", name: "강위원", attended: true }
+          ],
+          summary: { discussions: [], decisions: [], followups: [] },
+          lastModified: Date.now()
+        };
+      } else if (presetType === '교직원') {
+        STATE.meeting = {
+          id: `m_${Date.now()}`,
+          title: "2026학년도 3월 교직원 전체협의회",
+          type: "교직원 전체회의",
+          dept: "교무부",
+          datetime: dtStr,
+          location: "시청각실",
+          writer: "교무기획부장 김선생",
+          school: "빛가람초등학교",
+          transcript: "",
+          agendas: [
+            { id: 1, title: "제1호: 신학기 학생 생활지도 및 늘봄학교 운영 안내" },
+            { id: 2, title: "제2호: 1학기 학교행사 일정 및 교무업무 지원" }
+          ],
+          attendees: [
+            { id: 1, role: "교장", name: "이교장", attended: true },
+            { id: 2, role: "교감", name: "박교감", attended: true },
+            { id: 3, role: "교무부장", name: "김교무", attended: true }
+          ],
+          summary: { discussions: [], decisions: [], followups: [] },
+          lastModified: Date.now()
+        };
+      } else if (presetType === '학폭') {
+        STATE.meeting = {
+          id: `m_${Date.now()}`,
+          title: "2026학년도 제1회 학교폭력전담기구 심의회",
+          type: "학교폭력전담기구",
+          dept: "학생생활안전부",
+          datetime: dtStr,
+          location: "상담실",
+          writer: "생활안전부장 최교사",
+          school: "빛가람초등학교",
+          transcript: "",
+          agendas: [
+            { id: 1, title: "제1호: 학교폭력 사안 자체해결 요건 충족 여부 심의" }
+          ],
+          attendees: [
+            { id: 1, role: "교감(위원장)", name: "박교감", attended: true },
+            { id: 2, role: "생활부장", name: "최교사", attended: true },
+            { id: 3, role: "보건교사", name: "정보건", attended: true },
+            { id: 4, role: "학부모위원", name: "윤학부모", attended: true }
+          ],
+          summary: { discussions: [], decisions: [], followups: [] },
+          lastModified: Date.now()
+        };
+      }
+
+      toggleModal('newMeetingModal');
+      renderAll();
+      switchView('record');
+      saveToLocalStorage(true);
+    }
+
+    function switchView(viewName) {
+      STATE.activeView = viewName;
+      const views = ['record', 'agendas', 'meeting', 'attendees', 'result'];
+      views.forEach(v => {
+        const el = document.getElementById('view' + capitalize(v));
+        const tabEl = document.getElementById('navTab' + capitalize(v));
+        if (el && tabEl) {
+          if (v === viewName) {
+            el.classList.remove('hidden');
+            tabEl.classList.add('border-blue-600', 'text-blue-600');
+            tabEl.classList.remove('border-transparent', 'text-slate-500');
+          } else {
+            el.classList.add('hidden');
+            tabEl.classList.remove('border-blue-600', 'text-blue-600');
+            tabEl.classList.add('border-transparent', 'text-slate-500');
+          }
+        }
+      });
+
+      if (viewName === 'meeting') {
+        performSearch();
+      } else if (viewName === 'agendas') {
+        renderAgendasManagement();
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      lucide.createIcons();
+    }
+
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    function renderAll() {
+      // Inputs
+      const titleEl = document.getElementById('inputMeetingTitle');
+      if (titleEl) titleEl.value = STATE.meeting.title || '';
+      const typeEl = document.getElementById('inputMeetingType');
+      if (typeEl) typeEl.value = STATE.meeting.type || '학교운영위원회';
+      const deptEl = document.getElementById('inputDept');
+      if (deptEl) deptEl.value = STATE.meeting.dept || '';
+      const dtEl = document.getElementById('inputMeetingDateTime');
+      if (dtEl) dtEl.value = STATE.meeting.datetime || '';
+      const locEl = document.getElementById('inputLocation');
+      if (locEl) locEl.value = STATE.meeting.location || '';
+      const wrEl = document.getElementById('inputWriter');
+      if (wrEl) wrEl.value = STATE.meeting.writer || '';
+      const schEl = document.getElementById('inputSchoolName');
+      if (schEl) schEl.value = STATE.meeting.school || '';
+
+      // Badges
+      const bCat = document.getElementById('badgeCategory');
+      if (bCat) bCat.textContent = STATE.meeting.type || '학교운영위원회';
+      const bTitle = document.getElementById('badgeTitle');
+      if (bTitle) bTitle.textContent = STATE.meeting.title || '';
+      const bTL = document.getElementById('badgeTimeLocation');
+      if (bTL) bTL.textContent = `${(STATE.meeting.datetime || '').replace('T', ' ')} | ${STATE.meeting.location || ''}`;
+
+      renderAgendas();
+      renderAgendasManagement();
+      renderAttendees();
+      selectAgenda(STATE.selectedAgendaIndex, false);
+      lucide.createIcons();
+    }
+
+    function selectAgenda(idx, shouldSavePrev = true) {
+      if (shouldSavePrev) {
+        // Save current textarea content to the previously active agenda
+        const curAgenda = getCurrentAgenda();
+        curAgenda.transcript = document.getElementById('liveTranscriptArea').value;
+      }
+
+      if (idx < 0) idx = 0;
+      if (idx >= STATE.meeting.agendas.length) idx = STATE.meeting.agendas.length - 1;
+
+      STATE.selectedAgendaIndex = idx;
+      const agenda = getCurrentAgenda();
+      
+      // Update textarea with the selected agenda's transcript
+      const textarea = document.getElementById('liveTranscriptArea');
+      if (textarea) {
+        textarea.value = agenda.transcript || "";
+      }
+      
+      updateCharCount();
+      updateActiveAgendaInfoDisplay();
+      renderAgendasOnlyPills();
+      
+      if (shouldSavePrev) {
+        saveToLocalStorage(true);
+      }
+    }
+
+    function renderAgendasOnlyPills() {
+      const container = document.getElementById('agendaPillsContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      STATE.meeting.agendas.forEach((agenda, idx) => {
+        const isSelected = idx === STATE.selectedAgendaIndex;
+        const hasContent = (agenda.transcript || '').trim().length > 0;
+        const charLen = (agenda.transcript || '').length;
+
+        const btn = document.createElement('button');
+        btn.className = `px-3 py-1.5 rounded-lg shrink-0 font-bold text-xs transition flex items-center gap-1.5 ${
+          isSelected 
+            ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-300 ring-offset-1' 
+            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+        }`;
+        
+        btn.innerHTML = `
+          <span>${escapeHtml(agenda.title)}</span>
+          ${hasContent ? `<span class="px-1.5 py-0.2 text-[10px] rounded-full ${isSelected ? 'bg-blue-800 text-blue-100' : 'bg-blue-100 text-blue-700 font-mono'}">${charLen}자</span>` : ''}
+        `;
+        
+        btn.onclick = () => {
+          selectAgenda(idx, true);
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function renderAgendas() {
+      renderAgendasOnlyPills();
+      updateActiveAgendaInfoDisplay();
+      const countDisp = document.getElementById('agendaCountDisplay');
+      if (countDisp) countDisp.textContent = STATE.meeting.agendas.length;
+    }
+
+    // ==========================================
+    // [AGENDA MANAGEMENT: ADD / EDIT / DELETE]
+    // ==========================================
+    function renderAgendasManagement() {
+      const container = document.getElementById('agendasManagementList');
+      if (!container) return;
+
+      const countDisp = document.getElementById('agendaCountDisplay');
+      if (countDisp) countDisp.textContent = STATE.meeting.agendas.length;
+
+      if (STATE.meeting.agendas.length === 0) {
+        container.innerHTML = `
+          <div class="clean-card p-5 text-center text-slate-400 space-y-1">
+            <p class="text-xs font-bold">등록된 안건이 없습니다.</p>
+            <p class="text-[11px]">위 입력창에서 안건을 추가해 주세요.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = STATE.meeting.agendas.map((agenda, idx) => {
+        const charLen = (agenda.transcript || '').trim().length;
+        const isCurrent = idx === STATE.selectedAgendaIndex;
+        const preview = (agenda.transcript || '').trim()
+          ? escapeHtml(agenda.transcript.slice(0, 70) + (agenda.transcript.length > 70 ? '...' : ''))
+          : '<span class="text-slate-400 italic">아직 기록된 발언 내용이 없습니다.</span>';
+
+        return `
+          <div class="p-3.5 rounded-xl border ${isCurrent ? 'border-blue-300 bg-blue-50/40 ring-1 ring-blue-200' : 'border-slate-200 bg-slate-50'} space-y-2 transition">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2 flex-1">
+                <span class="w-6 h-6 rounded-lg bg-blue-600 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                  ${idx + 1}
+                </span>
+                <input type="text" value="${escapeHtml(agenda.title)}" 
+                  onchange="updateAgendaTitle(${idx}, this.value)" 
+                  class="w-full text-xs font-bold text-slate-900 bg-white border border-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <button onclick="selectAgenda(${idx}, true); switchView('record');" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1" title="발언 기록으로 이동">
+                  <i data-lucide="mic" class="w-3.5 h-3.5"></i>
+                  <span>기록</span>
+                </button>
+                <button onclick="deleteAgendaDirectly(${idx})" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="안건 삭제">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Transcript preview snippet -->
+            <div class="flex items-center justify-between text-[11px] text-slate-500 bg-white p-2 rounded-lg border border-slate-100">
+              <div class="truncate mr-2">
+                <strong>발언 요약:</strong> ${preview}
+              </div>
+              <span class="font-mono text-blue-600 font-bold shrink-0 bg-blue-50 px-1.5 py-0.5 rounded">${charLen}자</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function addAgendaDirectly() {
+      const input = document.getElementById('inputDirectAgendaTitle');
+      if (!input) return;
+      const title = input.value.trim();
+      if (!title) {
+        alert('안건명을 입력해 주세요.');
+        return;
+      }
+
+      // Save active agenda transcript before adding
+      const curAgenda = getCurrentAgenda();
+      const area = document.getElementById('liveTranscriptArea');
+      if (area) curAgenda.transcript = area.value;
+
+      const num = STATE.meeting.agendas.length + 1;
+      const formattedTitle = title.startsWith('제') && title.includes('호') ? title : `제${num}호: ${title}`;
+
+      STATE.meeting.agendas.push({
+        id: Date.now(),
+        title: formattedTitle,
+        transcript: ""
+      });
+
+      input.value = '';
+      renderAgendas();
+      renderAgendasManagement();
+      saveToLocalStorage(true);
+    }
+
+    function updateAgendaTitle(idx, newTitle) {
+      if (!STATE.meeting.agendas[idx]) return;
+      STATE.meeting.agendas[idx].title = newTitle.trim() || `제${idx + 1}호 안건`;
+      renderAgendas();
+      saveToLocalStorage(true);
+    }
+
+    function deleteAgendaDirectly(idx) {
+      if (STATE.meeting.agendas.length <= 1) {
+        alert('최소 1개 이상의 안건이 유지되어야 합니다.');
+        return;
+      }
+
+      const agenda = STATE.meeting.agendas[idx];
+      if (confirm(`"${agenda.title}" 안건을 삭제하시겠습니까?\n작성된 발언 내용도 함께 삭제됩니다.`)) {
+        STATE.meeting.agendas.splice(idx, 1);
+        if (STATE.selectedAgendaIndex >= STATE.meeting.agendas.length) {
+          STATE.selectedAgendaIndex = STATE.meeting.agendas.length - 1;
+        }
+        renderAgendas();
+        renderAgendasManagement();
+        selectAgenda(STATE.selectedAgendaIndex, false);
+        saveToLocalStorage(true);
+      }
+    }
+
+    function openAddAgendaModal() {
+      document.getElementById('inputNewAgendaTitle').value = '';
+      toggleModal('addAgendaModal');
+    }
+
+    function saveNewAgenda() {
+      const title = document.getElementById('inputNewAgendaTitle').value.trim();
+      if (!title) return;
+      
+      // Save current before creating new
+      const curAgenda = getCurrentAgenda();
+      curAgenda.transcript = document.getElementById('liveTranscriptArea').value;
+
+      const count = STATE.meeting.agendas.length + 1;
+      STATE.meeting.agendas.push({
+        id: Date.now(),
+        title: `제${count}호: ${title}`,
+        transcript: ""
+      });
+      
+      selectAgenda(STATE.meeting.agendas.length - 1, false);
+      renderAgendasManagement();
+      saveToLocalStorage(true);
+      toggleModal('addAgendaModal');
+    }
+
+    function resetToBlankMeeting() {
+      if (confirm('현재 회의 내용을 비우고 새로운 빈 회의를 시작하시겠습니까?')) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        const dtStr = now.toISOString().slice(0, 16);
+
+        STATE.meeting = {
+          id: `m_${Date.now()}`,
+          title: "새 회의",
+          type: "기타 협의회",
+          dept: "행정실",
+          datetime: dtStr,
+          location: "회의실",
+          writer: "간사",
+          school: "빛가람초등학교",
+          transcript: "",
+          agendas: [
+            { id: 1, title: "제1호: 제1호 기본 안건", transcript: "" }
+          ],
+          attendees: [
+            { id: 1, role: "위원장", name: "위원장", attended: true }
+          ],
+          summary: { discussions: [], decisions: [], followups: [] },
+          lastModified: Date.now()
+        };
+        renderAll();
+        switchView('meeting');
+        saveToLocalStorage(true);
+      }
+    }
+
+    // ==========================================
+    // [ATTENDEE MANAGEMENT & DEFAULT COMMITTEE PRESETS]
+    // ==========================================
+    function renderAttendees() {
+      const container = document.getElementById('attendeesListContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      let attendedCount = 0;
+
+      STATE.meeting.attendees.forEach((att, idx) => {
+        if (att.attended) attendedCount++;
+
+        const div = document.createElement('div');
+        div.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs gap-2';
+        div.innerHTML = `
+          <label class="flex items-center gap-2 cursor-pointer shrink-0">
+            <input type="checkbox" ${att.attended ? 'checked' : ''} onchange="toggleAttendeeAttended(${idx})" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+            <span class="text-[11px] font-bold ${att.attended ? 'text-blue-700 bg-blue-100' : 'text-slate-500 bg-slate-200'} px-1.5 py-0.5 rounded">${att.attended ? '출석' : '결석'}</span>
+          </label>
+
+          <div class="flex items-center gap-1.5 flex-1 min-w-0">
+            <input type="text" value="${escapeHtml(att.role)}" 
+              onchange="updateAttendeeRole(${idx}, this.value)" 
+              placeholder="직위" 
+              class="w-28 text-xs p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 focus:ring-1 focus:ring-blue-500" />
+            <input type="text" value="${escapeHtml(att.name)}" 
+              onchange="updateAttendeeName(${idx}, this.value)" 
+              placeholder="성명" 
+              class="flex-1 text-xs p-1.5 bg-white border border-slate-200 rounded-lg font-medium text-slate-900 focus:ring-1 focus:ring-blue-500" />
+          </div>
+
+          <button onclick="removeAttendee(${idx})" class="text-slate-400 hover:text-red-600 p-1.5 shrink-0 rounded-lg" title="삭제">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        container.appendChild(div);
+      });
+
+      const total = STATE.meeting.attendees.length;
+      const rate = total > 0 ? Math.round((attendedCount / total) * 100) : 0;
+
+      const statAttEl = document.getElementById('statAttendedCount');
+      if (statAttEl) statAttEl.textContent = attendedCount;
+      const statTotEl = document.getElementById('statTotalCount');
+      if (statTotEl) statTotEl.textContent = total;
+      const statRateEl = document.getElementById('statRate');
+      if (statRateEl) statRateEl.textContent = `${rate}%`;
+      const statProgEl = document.getElementById('statProgressBar');
+      if (statProgEl) statProgEl.style.width = `${rate}%`;
+      const tabAttEl = document.getElementById('tabAttendeeCount');
+      if (tabAttEl) tabAttEl.textContent = attendedCount;
+      lucide.createIcons();
+    }
+
+    function updateAttendeeRole(idx, newRole) {
+      if (!STATE.meeting.attendees[idx]) return;
+      STATE.meeting.attendees[idx].role = newRole.trim() || '위원';
+      saveToLocalStorage(true);
+    }
+
+    function updateAttendeeName(idx, newName) {
+      if (!STATE.meeting.attendees[idx]) return;
+      STATE.meeting.attendees[idx].name = newName.trim() || '무명';
+      saveToLocalStorage(true);
+    }
+
+    function toggleAttendeeAttended(idx) {
+      STATE.meeting.attendees[idx].attended = !STATE.meeting.attendees[idx].attended;
+      renderAttendees();
+      saveToLocalStorage(true);
+    }
+
+    function checkAllAttendees(attended) {
+      STATE.meeting.attendees.forEach(a => a.attended = attended);
+      renderAttendees();
+      saveToLocalStorage(true);
+    }
+
+    function addAttendee() {
+      const role = document.getElementById('inputNewAttendeeRole').value.trim();
+      const name = document.getElementById('inputNewAttendeeName').value.trim();
+      if (!name) {
+        alert('참석자 성명을 입력해 주세요.');
+        return;
+      }
+
+      STATE.meeting.attendees.push({
+        id: Date.now(),
+        role: role || '위원',
+        name: name,
+        attended: true
+      });
+
+      document.getElementById('inputNewAttendeeRole').value = '';
+      document.getElementById('inputNewAttendeeName').value = '';
+      renderAttendees();
+      saveToLocalStorage(true);
+    }
+
+    function removeAttendee(idx) {
+      STATE.meeting.attendees.splice(idx, 1);
+      renderAttendees();
+      saveToLocalStorage(true);
+    }
+
+    // Default Member List Persistence & Presets
+    function saveCurrentAttendeesAsDefault() {
+      if (STATE.meeting.attendees.length === 0) {
+        alert('저장할 참석 위원이 없습니다.');
+        return;
+      }
+      const defaultMembers = JSON.parse(JSON.stringify(STATE.meeting.attendees));
+      localStorage.setItem('jne_default_committee_attendees', JSON.stringify(defaultMembers));
+      alert(`총 ${defaultMembers.length}명의 위원 명단이 기본 명단으로 영구 저장되었습니다.\n앞으로 언제든지 '저장된 기본 명단 불러오기'로 즉시 사용할 수 있습니다.`);
+    }
+
+    function loadDefaultAttendees() {
+      const saved = localStorage.getItem('jne_default_committee_attendees');
+      if (!saved) {
+        alert('저장된 기본 위원 명단이 없습니다. 먼저 현재 명단을 기본 명단으로 저장해 주세요.');
+        return;
+      }
+      try {
+        const parsed = JSON.parse(saved);
+        if (confirm(`저장된 기본 명단(${parsed.length}명)을 불러와 적용하시겠습니까?`)) {
+          STATE.meeting.attendees = JSON.parse(JSON.stringify(parsed));
+          renderAttendees();
+          saveToLocalStorage(true);
+          alert('기본 위원 명단이 성공적으로 적용되었습니다.');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function loadCommitteePreset(type) {
+      let preset = [];
+      if (type === '운영위원회') {
+        preset = [
+          { id: 1, role: "위원장", name: "김위원장", attended: true },
+          { id: 2, role: "교장(당연직)", name: "이교장", attended: true },
+          { id: 3, role: "교원위원", name: "박교사", attended: true },
+          { id: 4, role: "학부모위원", name: "최학부모", attended: true },
+          { id: 5, role: "지역위원", name: "정위원", attended: true }
+        ];
+      } else if (type === '예산결산') {
+        preset = [
+          { id: 1, role: "소위원장", name: "이위원", attended: true },
+          { id: 2, role: "행정실장", name: "정실장", attended: true },
+          { id: 3, role: "학부모위원", name: "강위원", attended: true }
+        ];
+      } else if (type === '교직원') {
+        preset = [
+          { id: 1, role: "교장", name: "이교장", attended: true },
+          { id: 2, role: "교감", name: "박교감", attended: true },
+          { id: 3, role: "교무부장", name: "김교무", attended: true },
+          { id: 4, role: "행정실장", name: "이실장", attended: true }
+        ];
+      } else if (type === '학교폭력') {
+        preset = [
+          { id: 1, role: "교감(위원장)", name: "박교감", attended: true },
+          { id: 2, role: "생활안전부장", name: "최교사", attended: true },
+          { id: 3, role: "보건교사", name: "정보건", attended: true },
+          { id: 4, role: "학부모위원", name: "윤학부모", attended: true }
+        ];
+      }
+
+      if (confirm(`${type} 기본 위원 명단(${preset.length}명)을 불러오시겠습니까?`)) {
+        STATE.meeting.attendees = preset;
+        renderAttendees();
+        saveToLocalStorage(true);
+      }
+    }
+
+    function loadSampleText() {
+      const curAgenda = getCurrentAgenda();
+      let sample = "";
+      
+      if (curAgenda.title.includes("방과후")) {
+        sample = `- 간사: 제1호 안건 '2026학년도 1학기 방과후학교 운영계획안'을 상정합니다.
+- 교무부장: 방과후학교는 학생 1인당 월 수강료 30,000원으로 동결하고 자유수강권 지원 대상 12명에 대한 예산을 전액 반영하였습니다.
+- 학부모위원: 학생 개인정보 보호를 위해 지원 대상자 명단 보안 관리에 만전을 기해 주십시오.
+- 위원장: 질의가 없으므로 제1호 안건은 전원 찬성으로 원안 가결되었음을 선포합니다.`;
+      } else if (curAgenda.title.includes("예산") || curAgenda.title.includes("추경")) {
+        sample = `- 행정실장: 제2호 안건 '제1회 학교회계 추가경정예산안' 제안설명 드리겠습니다. 과학실 현대화 5,000만원 및 안전펜스 설치 1,500만원을 증액 편성하였습니다.
+- 위원장: 안전펜스 공사는 방학 중 완료가 가능한지요?
+- 행정실장: 네, 7월 초 계약 체결 후 방학 즉시 착공하여 개학 전 준공하겠습니다.
+- 위원장: 이의 없으시므로 제2호 안건 원안 가결합니다.`;
+      } else {
+        sample = `- 담당부장: 해당 안건에 대한 세부 계획안 및 학생 안전 대책을 보고드립니다.
+- 위원: 사전 현장 점검 결과 이상이 없었는지 확인 부탁드립니다.
+- 담당부장: 관계기관 합동 안전점검을 완료하였습니다.
+- 위원장: 전원 찬성으로 본 안건을 가결합니다.`;
+      }
+      
+      document.getElementById('liveTranscriptArea').value = sample;
+      curAgenda.transcript = sample;
+      STATE.meeting.transcript = getFullTranscriptText();
+      updateCharCount();
+      renderAgendasOnlyPills();
+      saveToLocalStorage(true);
+    }
+
+    function clearTranscript() {
+      const curAgenda = getCurrentAgenda();
+      if (confirm(`"${curAgenda.title}"의 작성 중인 발언 내용을 비우시겠습니까?`)) {
+        document.getElementById('liveTranscriptArea').value = '';
+        curAgenda.transcript = '';
+        STATE.meeting.transcript = getFullTranscriptText();
+        updateCharCount();
+        renderAgendasOnlyPills();
+        saveToLocalStorage(true);
+      }
+    }
+
+    function resetAllMeetingData() {
+      if (confirm('모든 회의 데이터를 초기화하시겠습니까?')) {
+        localStorage.removeItem('jne_mobile_meeting_data');
+        location.reload();
+      }
+    }
+
+    function saveSettings() {
+      const key = document.getElementById('inputApiKey').value.trim();
+      if (key) {
+        localStorage.setItem('jne_gemini_api_key', key);
+      } else {
+        localStorage.removeItem('jne_gemini_api_key');
+      }
+    }
+
+    function saveMeetingInfo() {
+      saveToLocalStorage(true);
+      renderAll();
+    }
+
+    function toggleModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('hidden');
+      lucide.createIcons();
+    }
+
+    function triggerConfetti() {
+      if (window.confetti) {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.8 }
+        });
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeRegex(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // ==========================================
+    // [MODULE 8: INITIALIZATION]
+    // ==========================================
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      loadFromLocalStorage();
+      setupSpeechRecognition();
+      setupAutoSave();
+      renderAll();
+
+      if (!document.getElementById('inputMeetingDateTime').value) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById('inputMeetingDateTime').value = now.toISOString().slice(0, 16);
+      }
+
+      window.addEventListener('beforeunload', () => saveToLocalStorage(true));
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') saveToLocalStorage(true);
+      });
+
+      document.getElementById('liveTranscriptArea').addEventListener('input', (e) => {
+        const curAgenda = getCurrentAgenda();
+        curAgenda.transcript = e.target.value;
+        STATE.meeting.transcript = getFullTranscriptText();
+        updateCharCount();
+        renderAgendasOnlyPills();
+      });
+    });
+  </script>
+</body>
+</html>

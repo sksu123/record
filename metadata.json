@@ -1,0 +1,6 @@
+{
+  "name": "전남교육 행정실 업무자동화 HUB & 스마트 회의록 AI 생성기",
+  "description": "전라남도교육청 학교행정실을 위한 AI 회의록 STT 변환, 개인정보 비식별화, 안건별 구조화 요약 및 행정업무 자동화 허브",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
